@@ -1,5 +1,29 @@
 # AI Trading Assistant & Researcher
 
+## Coming Soon
+
+### 🪙 Crypto Tab — Coinbase Integration
+Add a dedicated **Crypto** tab alongside the existing Stocks tab. Connect directly to the Coinbase API to pull live BTC, ETH, and altcoin balances, cost basis, and P&L — the same way Schwab CSVs power the Stocks tab today. Cold wallet balances (BTC/ETH held in hardware wallets) can be added manually or imported, then consolidated with Coinbase into a single net worth view across all assets.
+
+**Planned features:**
+- Coinbase OAuth or API key integration
+- Manual cold wallet address entry (read-only balance lookup via public blockchain)
+- Crypto-specific agents: on-chain sentiment, fear & greed index, whale activity, DeFi yield opportunities
+- Unified total net worth bar across Stocks + Crypto tabs
+
+---
+
+### 🌐 Local Network Hosting — Access from Any Device
+Host the dashboard on your Windows PC so it's reachable from your MacBook (or phone) when you're on the same Wi-Fi — or anywhere via a secure tunnel when traveling.
+
+**Planned features:**
+- Auto-detect local IP and bind to `0.0.0.0` on startup
+- Optional password protection for the dashboard
+- `ngrok` or Cloudflare Tunnel integration for secure remote access from MacBook while traveling
+- QR code printed at startup for instant mobile access
+
+---
+
 > Personal AI-powered trading research system built on [Claude Code](https://claude.ai/code). Connects to your Schwab account, knows your actual positions and cost basis, and delivers personalized profit-taking and income guidance — all from your terminal.
 
 ---
@@ -201,30 +225,6 @@ For any individual ticker, the full analysis pipeline:
 - `portfolio/portfolio.json` is gitignored — your positions and cost basis stay local
 - No API connections to Schwab or any brokerage
 - No data leaves your environment except standard Claude API calls for analysis
-
----
-
-## Coming Soon
-
-### 🪙 Crypto Tab — Coinbase Integration
-Add a dedicated **Crypto** tab alongside the existing Stocks tab. Connect directly to the Coinbase API to pull live BTC, ETH, and altcoin balances, cost basis, and P&L — the same way Schwab CSVs power the Stocks tab today. Cold wallet balances (BTC/ETH held in hardware wallets) can be added manually or imported, then consolidated with Coinbase into a single net worth view across all assets.
-
-**Planned features:**
-- Coinbase OAuth or API key integration
-- Manual cold wallet address entry (read-only balance lookup via public blockchain)
-- Crypto-specific agents: on-chain sentiment, fear & greed index, whale activity, DeFi yield opportunities
-- Unified total net worth bar across Stocks + Crypto tabs
-
----
-
-### 🌐 Local Network Hosting — Access from Any Device
-Host the dashboard on your Windows PC so it's reachable from your MacBook (or phone) when you're on the same Wi-Fi — or anywhere via a secure tunnel when traveling.
-
-**Planned features:**
-- Auto-detect local IP and bind to `0.0.0.0` on startup
-- Optional password protection for the dashboard
-- `ngrok` or Cloudflare Tunnel integration for secure remote access from MacBook while traveling
-- QR code printed at startup for instant mobile access
 
 ---
 
