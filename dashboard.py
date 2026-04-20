@@ -8,6 +8,7 @@ Then open: http://localhost:8765
 """
 
 import json
+import os
 import time
 import asyncio
 from pathlib import Path
@@ -15,7 +16,25 @@ from datetime import datetime, date
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Tuple
 
+# Load .env before importing anthropic so the key is available
+_env_path = Path(__file__).parent / ".env"
+if _env_path.exists():
+    for _line in _env_path.read_text(encoding="utf-8-sig").splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _v = _line.split("=", 1)
+            os.environ[_k.strip()] = _v.strip()  # always set, not just default
+
 import anthropic
+
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+if not ANTHROPIC_API_KEY:
+    print("WARNING: ANTHROPIC_API_KEY not set — agents will not work")
+
+
+def _make_client() -> anthropic.Anthropic:
+    key = os.environ.get("ANTHROPIC_API_KEY") or ANTHROPIC_API_KEY
+    return anthropic.Anthropic(api_key=key)
 import requests
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -245,6 +264,17 @@ def enrich_portfolio(data: dict) -> dict:
 
 
 # ── API Routes ────────────────────────────────────────────────────────────────
+
+@app.get("/api/debug")
+def api_debug():
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    return {
+        "key_in_env": bool(key),
+        "key_length": len(key),
+        "key_preview": key[:12] + "..." if len(key) > 12 else "(empty)",
+        "module_key_length": len(ANTHROPIC_API_KEY),
+    }
+
 
 @app.get("/api/portfolio")
 def api_portfolio():
@@ -523,7 +553,7 @@ async def run_stock_agent(agent_type: str, symbol: str):
     prompt    = AGENT_PROMPTS[agent_type].replace("{data}", stock_ctx)
 
     async def event_stream():
-        client = anthropic.Anthropic()
+        client = _make_client()
         try:
             with client.messages.stream(
                 model="claude-sonnet-4-6",
@@ -566,7 +596,7 @@ async def run_account_guidance(account_id: str):
     prompt   = AGENT_PROMPTS["guidance"].replace("{data}", acct_ctx).replace("${cash}", f"${cash:,.2f}")
 
     async def event_stream():
-        client = anthropic.Anthropic()
+        client = _make_client()
         try:
             with client.messages.stream(
                 model="claude-sonnet-4-6",

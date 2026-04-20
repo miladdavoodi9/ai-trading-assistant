@@ -1,3 +1,6 @@
+# API keys — never commit
+.env
+
 # Sensitive financial data — never commit
 portfolio/input/
 portfolio/portfolio.json

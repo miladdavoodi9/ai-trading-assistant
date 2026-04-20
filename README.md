@@ -1,233 +1,148 @@
 # AI Trading Assistant & Researcher
 
+> A personal, self-hosted investment dashboard that knows your actual portfolio and helps you make smarter decisions — powered by AI.
+
+---
+
 ## Coming Soon
 
 ### 🪙 Crypto Tab — Coinbase Integration
-Add a dedicated **Crypto** tab alongside the existing Stocks tab. Connect directly to the Coinbase API to pull live BTC, ETH, and altcoin balances, cost basis, and P&L — the same way Schwab CSVs power the Stocks tab today. Cold wallet balances (BTC/ETH held in hardware wallets) can be added manually or imported, then consolidated with Coinbase into a single net worth view across all assets.
+A dedicated **Crypto** tab alongside Stocks. Connect to Coinbase to pull live BTC, ETH, and altcoin balances, cost basis, and P&L. Cold wallet balances (hardware wallets) can be entered manually and looked up via public blockchain — all consolidated into a single net worth view.
 
-**Planned features:**
-- Coinbase OAuth or API key integration
-- Manual cold wallet address entry (read-only balance lookup via public blockchain)
-- Crypto-specific agents: on-chain sentiment, fear & greed index, whale activity, DeFi yield opportunities
-- Unified total net worth bar across Stocks + Crypto tabs
-
----
-
-### 🌐 Local Network Hosting — Access from Any Device
-Host the dashboard on your Windows PC so it's reachable from your MacBook (or phone) when you're on the same Wi-Fi — or anywhere via a secure tunnel when traveling.
-
-**Planned features:**
-- Auto-detect local IP and bind to `0.0.0.0` on startup
-- Optional password protection for the dashboard
-- `ngrok` or Cloudflare Tunnel integration for secure remote access from MacBook while traveling
-- QR code printed at startup for instant mobile access
+**Planned:**
+- Coinbase OAuth / API key connection
+- Manual cold wallet address entry with live on-chain balance lookup
+- Crypto-specific AI agents: on-chain sentiment, fear & greed index, whale activity, DeFi yield
+- Unified net worth bar: Stocks + Crypto in one number
 
 ---
 
-> Personal AI-powered trading research system built on [Claude Code](https://claude.ai/code). Connects to your Schwab account, knows your actual positions and cost basis, and delivers personalized profit-taking and income guidance — all from your terminal.
+### 🌐 Remote Access — Use It From Anywhere
+Access the dashboard from your MacBook, phone, or any device — even when traveling.
+
+**Planned:**
+- Local network access (same Wi-Fi as your PC)
+- Secure remote tunnel via ngrok or Cloudflare for access on the road
+- Optional password protection
+- QR code at startup for instant mobile access
 
 ---
 
 ## What This Is
 
-A private, self-hosted trading research system that combines:
+A private trading research dashboard that runs entirely on your own computer. It reads your real Schwab portfolio, tracks your positions with live prices, and lets you run AI-powered analysis on any stock — all through a clean browser-based interface.
 
-- **Your real portfolio** — Schwab CSV integration loads your actual positions, cost basis, unrealized gains, and cash balances
-- **16 Claude Code skills** — quick snapshots, full 5-agent analyses, options strategy, earnings previews, sector rotation, and more
-- **Personalized guidance** — profit-taking recommendations with specific share counts and tax notes, income optimization, covered call opportunities
-- **Zero brokerage connections** — reads a CSV export you control; never touches your account directly
-
-This is a research and analysis tool. It does not execute trades, manage money, or provide financial advice.
+This is a **research tool**. It does not execute trades, manage money, or connect to your brokerage. You stay in control.
 
 ---
 
-## Core Skills
+## The Dashboard
 
-| Command | What It Does |
-|---------|-------------|
-| `/trade guidance` | **Your personalized playbook** — profit-taking candidates ranked by score, income gap analysis, covered call opportunities, tax-loss harvest suggestions, and a consolidated action plan |
-| `/trade portfolio` | Full allocation analysis — sector weights vs benchmark, concentration risk, dividend income summary, rebalancing recommendations |
-| `/trade analyze <ticker>` | Flagship deep-dive — 5 parallel AI agents (technical, fundamental, sentiment, risk, thesis) produce a composite Trade Score (0–100) and full report |
-| `/trade quick <ticker>` | 60-second stock snapshot with signal and top factors |
-| `/trade compare <t1> <t2>` | Head-to-head comparison across all dimensions |
-| `/trade options <ticker>` | Options strategy recommendations based on current setup |
-| `/trade earnings <ticker>` | Pre-earnings analysis and expected move |
-| `/trade screen <criteria>` | Stock screener — momentum, value, dividend, growth, or custom |
-| `/trade thesis <ticker>` | Full investment thesis with bull/bear cases and entry/exit plan |
-| `/trade risk <ticker>` | Risk assessment and position sizing |
-| `/trade sector <sector>` | Sector rotation and momentum analysis |
-| `/trade technical <ticker>` | Technical analysis — price action, indicators, patterns |
-| `/trade fundamental <ticker>` | Fundamental analysis — valuation, growth, moat |
-| `/trade sentiment <ticker>` | News, analyst ratings, insider activity |
-| `/trade watchlist` | Build a scored, ranked watchlist |
-| `/trade report-pdf` | Generate a professional 6-page PDF investment report |
+Open your browser to `http://localhost:8765` after starting the app. Here's what you'll find:
 
----
+### Portfolio Overview
+The top bar shows your **total portfolio value** and **today's dollar and percentage change**, updated every 60 seconds with live market prices. Below it, three account cards show your Individual brokerage, Solo 401(k), and Rollover IRA — each with live equity values, today's change, and a visual breakdown of your holdings.
 
-## Schwab Integration
+### Account Strategy
+Each account card has a **"Get Account Strategy"** button. Click it and the AI generates a tailored strategy for that specific account type — taking into account tax treatment (taxable vs. tax-deferred vs. tax-free), your current holdings, unrealized gains, and available cash. The strategy opens in a full-screen overlay you can:
+- **Minimize** to a floating pill and restore anytime
+- **Export as PDF** — opens a clean print-ready page
+- **Email to yourself** — pre-fills your email client with the full analysis
+- Strategies are **cached for the day** — click again and it reopens instantly without re-running
 
-The system reads a positions CSV you export directly from Schwab. No API keys. No brokerage connection. You control the data.
+### Holdings Table
+A live table of all your positions across all three accounts. Sortable, searchable, and updated with real-time prices. Each row shows shares, live price, current value, cost basis, unrealized gain/loss in dollars and percent, and today's change. Click any row to open the stock detail panel.
 
-### Export Steps
+### Stock Detail Panel
+Click any holding to slide open a detail panel showing:
+- Current price with a **1-month sparkline chart**
+- 52-week high and low, P/E ratio, market cap, beta
+- Analyst consensus rating and price target (with implied upside/downside)
+- Your holdings in that stock across accounts — shares, average cost, current gain/loss
+- Recent news headlines
+- Quick-launch buttons for every AI agent
 
-1. Log in to Schwab → **Accounts** tab → **Positions**
-2. Click the **Export** icon (top-right, page with down-arrow)
-3. Save the CSV file
-4. Drop it into `portfolio/input/`
-5. Run the parser:
+### AI Agents
+Select any stock — your holdings *or* any ticker you type in — and run one of seven AI analyses:
 
-```bash
-python parse_schwab.py
-```
+| Agent | What It Does |
+|-------|-------------|
+| ⚡ Quick Snapshot | Fast signal (Buy/Hold/Sell/Avoid), top 3 bull and bear factors, key levels, one-line thesis |
+| 📊 Technical | Trend, support & resistance levels, momentum, entry zone, stop loss, and targets |
+| 🏗 Fundamental | Valuation verdict, growth profile, margins, financial health, and competitive moat |
+| 🎯 Sentiment | News tone, analyst consensus, short interest, insider and institutional signals |
+| 📈 Options | Specific options strategies with strikes and expirations based on your directional view |
+| 🛡 Risk | Volatility profile, downside scenarios, position sizing with Kelly Criterion |
+| 📝 Thesis | Full bull/bear case, catalyst calendar, entry/exit strategy, and conviction score |
 
-This generates `portfolio/portfolio.json` — the structured data file all skills read from. From that point, every `/trade guidance` and `/trade portfolio` run uses your actual positions.
-
----
-
-## Guidance Output Example
-
-```
-╔══════════════════════════════════════════════════════════════╗
-║  YOUR PERSONALIZED ACTION PLAN                               ║
-║  Generated: 2026-04-19 | Portfolio: $284,500                 ║
-╚══════════════════════════════════════════════════════════════╝
-
-PROFIT-TAKING ACTIONS
-──────────────────────────────────────────────────────────────
-1. NVDA — Trim 33% (~28 shares) | Locks in ~$18,400 gain
-   RSI 77, position 19% of portfolio, near 52W high
-   Tax: Long-term gain — qualifies for 15/20% rate
-
-2. AAPL — Trim 20% (~15 shares) | Locks in ~$4,200 gain
-   Near analyst avg target, modest overbought signal
-
-INCOME ACTIONS
-──────────────────────────────────────────────────────────────
-1. Deploy $32K cash → SGOV (T-bill ETF, ~5.1%) = +$1,632/yr
-2. Sell 1 NVDA covered call (30 DTE, 10% OTM) = ~$420 premium
-
-AFTER THESE MOVES:
-  Annual income: $8,240/yr ($687/month)
-  Locked-in profits: $22,600
-  Cash available: $47,500
-
-──────────────────────────────────────────────────────────────
-DISCLAIMER: Educational/research only. Not financial advice.
-══════════════════════════════════════════════════════════════
-```
+Results stream live to the page as they generate. When done, you can **export to PDF** or **email the report**.
 
 ---
 
 ## Setup
 
-### Prerequisites
-
-- [Claude Code](https://claude.ai/code) with an active Anthropic API key
-- Python 3.8+
+### What You Need
+- Windows PC (to run the server)
+- [Python 3.8+](https://www.python.org/)
+- An [Anthropic API key](https://console.anthropic.com) (for AI agents)
 - A Schwab brokerage account
 
 ### Install
 
 ```bash
-# 1. Clone this repo
-git clone https://github.com/YOUR_USERNAME/ai-trading-assistant.git
+# 1. Clone the repo
+git clone https://github.com/miladdavoodi9/ai-trading-assistant.git
 cd ai-trading-assistant
 
-# 2. Install the base trading skills (16 skills, 5 agents)
-bash ai-trading-claude/install.sh
+# 2. Install dependencies
+pip install fastapi uvicorn anthropic requests
 
-# 3. Install the custom skills (guidance + updated portfolio)
-cp -r skills/trade-guidance ~/.claude/skills/
-cp skills/trade-portfolio/SKILL.md ~/.claude/skills/trade-portfolio/SKILL.md
-
-# 4. Install PDF dependencies (optional)
-pip install reportlab
+# 3. Add your Anthropic API key
+# Edit the .env file and paste your key:
+# ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-### First Run
+### Load Your Portfolio
+
+1. Log in to Schwab → **Accounts** → **Positions**
+2. Click the **Export** icon (top-right)
+3. Save the CSV and drop it into `portfolio/input/`
+4. Run the parser:
 
 ```bash
-# Drop your Schwab CSV into portfolio/input/
-# Then parse it:
 python parse_schwab.py
-
-# Launch Claude Code and run:
-# /trade guidance
-# /trade portfolio
 ```
+
+Do this for each of your Schwab accounts. The parser automatically handles multiple accounts.
+
+### Launch the Dashboard
+
+Double-click **`Start Dashboard.bat`** — the server starts and your browser opens automatically.
+
+Or from a terminal:
+```bash
+python dashboard.py
+```
+
+Then go to **http://localhost:8765**
 
 ---
 
-## How It Works
+## Updating Your Portfolio
 
-```
-Schwab Export (.csv)
-        │
-        ▼
-parse_schwab.py
-        │
-        ▼
-portfolio/portfolio.json   ←── contains: positions, cost basis,
-        │                       unrealized gains, cash, account totals
-        │
-   ┌────┴──────────────────────┐
-   │                           │
-   ▼                           ▼
-/trade guidance          /trade portfolio
-   │                           │
-   ├─ Profit-taking scores     ├─ Sector allocation
-   ├─ Tax treatment notes      ├─ Correlation matrix
-   ├─ Income gap analysis      ├─ Dividend analysis
-   ├─ Covered call ideas       ├─ Benchmark comparison
-   └─ Action plan              └─ Rebalancing plan
-```
-
-For any individual ticker, the full analysis pipeline:
-
-```
-/trade analyze <ticker>
-        │
-   ┌────┼────┬──────┬──────┐
-   ▼    ▼    ▼      ▼      ▼
- Tech Fund Sent  Risk Thesis  ← 5 parallel agents
-   └────┴────┴──────┴──────┘
-                │
-                ▼
-      Composite Trade Score (0–100)
-      Grade (A+ → F) + Signal
-      Full report saved as .md
-```
-
----
-
-## Project Structure
-
-```
-.
-├── README.md
-├── parse_schwab.py          # Schwab CSV → portfolio.json
-├── portfolio/
-│   ├── input/               # Drop Schwab CSV exports here (gitignored)
-│   └── HOW_TO_EXPORT.md     # Step-by-step Schwab export guide
-├── skills/
-│   ├── trade-guidance/
-│   │   └── SKILL.md         # Personalized profit-taking + income skill
-│   └── trade-portfolio/
-│       └── SKILL.md         # Updated portfolio skill (auto-reads portfolio.json)
-└── ai-trading-claude/       # Base skills repo (submodule)
-```
+Whenever you make a trade, export a fresh CSV from Schwab and run `python parse_schwab.py` again. The dashboard will pick up the new positions on the next refresh. Day-to-day price changes update automatically — no action needed.
 
 ---
 
 ## Privacy & Security
 
-- `portfolio/input/` is gitignored — your CSV exports never leave your machine
-- `portfolio/portfolio.json` is gitignored — your positions and cost basis stay local
-- No API connections to Schwab or any brokerage
-- No data leaves your environment except standard Claude API calls for analysis
+- Your portfolio data never leaves your machine
+- Schwab CSV exports are gitignored and stay local
+- No direct connection to Schwab or any brokerage
+- The only external calls are live price lookups (Yahoo Finance) and AI analysis (Anthropic API)
 
 ---
 
 ## Disclaimer
 
-This tool is for **educational and research purposes only**. It is **not** financial advice. It does **not** execute trades, manage portfolios, or connect to any brokerage. All analysis is AI-generated based on publicly available information. Markets are unpredictable. Past performance does not indicate future results. Always do your own due diligence and consult a licensed financial advisor before making investment decisions.
+This tool is for **educational and research purposes only**. It is not financial advice. It does not execute trades, manage portfolios, or connect to any brokerage. All analysis is AI-generated based on publicly available information. Markets are unpredictable. Always do your own due diligence and consult a licensed financial advisor before making investment decisions.
