@@ -1,6 +1,7 @@
 @echo off
 cd /d "%~dp0"
 echo Starting AI Trading Dashboard...
+python parse_schwab.py
 start "" http://localhost:8765
-C:\Users\milad\anaconda3\python.exe dashboard.py
+python dashboard.py
 pause

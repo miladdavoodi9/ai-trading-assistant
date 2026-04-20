@@ -522,9 +522,22 @@ RECENT NEWS:
 {news_lines}"""
 
 
+def _account_tax_label(account_id: str) -> str:
+    aid = account_id.upper()
+    if "401" in aid:
+        return "Solo 401(k) — tax-deferred, no capital gains tax, no wash sale rules, penalty for early withdrawal"
+    if "ROLLOVER" in aid or "ROLLOVER IRA" in aid:
+        return "Rollover IRA — tax-deferred, no capital gains tax, RMDs apply, penalty for early withdrawal"
+    if "ROTH" in aid:
+        return "Roth IRA — tax-free growth, no RMDs, contributions already taxed"
+    return "Individual Taxable — subject to capital gains tax, wash sale rules apply, long-term gains preferred"
+
+
 def build_account_context(account: dict) -> str:
+    tax_label = _account_tax_label(account["account_id"])
     lines = [
         f"Account: {account['account_id']}",
+        f"Account Type: {tax_label}",
         f"Total Equity: ${account.get('total_equity', 0):,.2f}",
         f"Cash: ${account.get('cash', 0):,.2f}",
         "",
