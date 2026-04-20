@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """
-parse_schwab.py — Schwab Positions CSV → portfolio.json + portfolio.md
+parse_schwab.py -- Schwab Positions CSV -> portfolio.json + portfolio.md
 
 Usage:
-    1. Export your positions from Schwab:
-       Accounts tab → Positions → Export (top-right icon) → Save as CSV
+    1. Export from Schwab: Accounts -> Positions -> Export icon -> Save CSV
     2. Drop the CSV into portfolio/input/
     3. Run: python parse_schwab.py
 
-Supports single-account and multi-account Schwab exports.
+Supports single-account and multi-account Schwab exports (including IRA accounts).
 Output: portfolio/portfolio.json  +  portfolio/portfolio.md
 """
 
@@ -25,10 +24,51 @@ OUTPUT_JSON = BASE_DIR / "portfolio" / "portfolio.json"
 OUTPUT_MD = BASE_DIR / "portfolio" / "portfolio.md"
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# ── Column name normalization ─────────────────────────────────────────────────
+# Schwab uses verbose names like "Mkt Val (Market Value)" or short names like
+# "Market Value" depending on account type. This maps both to a canonical key.
+
+COLUMN_MAP = {
+    # Quantity
+    "qty": "shares",
+    "qty (quantity)": "shares",
+    "quantity": "shares",
+    # Price
+    "price": "price",
+    # Market value
+    "market value": "market_value",
+    "mkt val (market value)": "market_value",
+    "mkt val": "market_value",
+    # Cost basis
+    "cost basis": "cost_basis",
+    # Gain/loss dollar
+    "gain/loss $": "gain_loss",
+    "gain $ (gain/loss $)": "gain_loss",
+    "gain $": "gain_loss",
+    # Gain/loss percent
+    "gain/loss %": "gain_loss_pct",
+    "gain % (gain/loss %)": "gain_loss_pct",
+    "gain %": "gain_loss_pct",
+    # % of account
+    "% of account": "pct_of_account",
+    "% of acct (% of account)": "pct_of_account",
+    "% of acct": "pct_of_account",
+    # Security type
+    "security type": "security_type",
+    "asset type": "security_type",
+    # Description
+    "description": "name",
+    # Symbol
+    "symbol": "symbol",
+}
+
+
+def normalize_header(h):
+    return COLUMN_MAP.get(h.strip().lower(), h.strip().lower())
+
 
 def clean_num(s):
-    """Strip $, %, commas → float. Return None if not parseable."""
+    """Strip $, %, commas -> float. Return None if not parseable."""
     if not s or str(s).strip() in ("--", "", "N/A", "n/a"):
         return None
     try:
@@ -37,24 +77,30 @@ def clean_num(s):
         return None
 
 
-def extract_account_id(line):
-    """Pull account number from Schwab header line."""
-    # Schwab format: "Positions for account  XXXX-1234 as of ..."
-    m = re.search(r'([A-Z0-9*]+-\d{4})', line)
-    if m:
-        return m.group(1)
-    # Fallback: any 4-digit suffix pattern
-    m = re.search(r'(\d{4})\b', line)
-    return f"Account-{m.group(1)}" if m else "Primary"
+def extract_account_id(header_line, filepath=None):
+    """Build a readable account ID from the CSV filename + last digits from header."""
+    label = "Account"
+
+    # Primary: derive label from filename (most reliable)
+    # e.g. "Individual 401(k)-Positions-2026-04-20-001626.csv" → "Individual 401(k)"
+    if filepath:
+        stem = Path(filepath).stem  # strip extension
+        m = re.match(r'^(.+?)\s*-\s*Positions', stem, re.IGNORECASE)
+        if m:
+            label = m.group(1).strip()
+
+    # Get last 3-4 digits from the header line (account number suffix)
+    # Handles both "...708" and "…708" (Unicode ellipsis)
+    m = re.search(r'[.…]{1,3}(\d{3,4})', header_line)
+    suffix = f"-{m.group(1)}" if m else ""
+
+    return f"{label}{suffix}"
 
 
 # ── Parser ────────────────────────────────────────────────────────────────────
 
 def parse_schwab_csv(filepath):
-    """
-    Parse one Schwab positions CSV. Returns list of account dicts.
-    Handles both single-account and multi-account exports.
-    """
+    """Parse one Schwab positions CSV. Returns list of account dicts."""
     accounts = []
     current = None
     headers = None
@@ -62,9 +108,7 @@ def parse_schwab_csv(filepath):
     with open(filepath, "r", encoding="utf-8-sig") as f:
         raw = f.read()
 
-    lines = raw.splitlines()
-
-    for line in lines:
+    for line in raw.splitlines():
         stripped = line.strip()
 
         # ── Account header ────────────────────────────────────────────────
@@ -72,7 +116,7 @@ def parse_schwab_csv(filepath):
             if current is not None:
                 accounts.append(current)
             current = {
-                "account_id": extract_account_id(stripped),
+                "account_id": extract_account_id(stripped, filepath),
                 "positions": [],
                 "cash": 0.0,
                 "total_equity": 0.0,
@@ -81,15 +125,12 @@ def parse_schwab_csv(filepath):
             continue
 
         # ── Column header row ─────────────────────────────────────────────
-        if '"Symbol"' in stripped or (
-            stripped.startswith('"Symbol') or stripped.startswith("Symbol")
-        ):
+        if re.search(r'"?Symbol"?', stripped) and "Description" in stripped:
             row = next(csv.reader([stripped]))
-            headers = [h.strip().strip('"') for h in row]
-            # Lazily create account if file has no account-header line
+            headers = [normalize_header(h) for h in row]
             if current is None:
                 current = {
-                    "account_id": "Primary",
+                    "account_id": extract_account_id("", filepath),
                     "positions": [],
                     "cash": 0.0,
                     "total_equity": 0.0,
@@ -100,10 +141,10 @@ def parse_schwab_csv(filepath):
         if not stripped or stripped.replace(",", "").strip() == "":
             continue
 
-        # ── Data rows (need headers) ──────────────────────────────────────
         if headers is None or current is None:
             continue
 
+        # ── Parse data row ────────────────────────────────────────────────
         try:
             row = next(csv.reader([stripped]))
             row = [c.strip().strip('"') for c in row]
@@ -113,48 +154,46 @@ def parse_schwab_csv(filepath):
         if not row or not row[0]:
             continue
 
-        # Map to dict (pad short rows)
         row += [""] * max(0, len(headers) - len(row))
         d = {headers[i]: row[i] for i in range(len(headers))}
-        sym = d.get("Symbol", "").strip()
+        sym = d.get("symbol", "").strip()
 
-        # ── Cash / money market line ──────────────────────────────────────
+        # ── Cash line ─────────────────────────────────────────────────────
         if not sym or "cash" in sym.lower() or "money market" in sym.lower():
-            val = clean_num(d.get("Market Value", ""))
+            val = clean_num(d.get("market_value", ""))
             if val is not None:
                 current["cash"] += val
             continue
 
-        # ── Account Total line ────────────────────────────────────────────
-        if "account total" in sym.lower() or sym.lower() == "total":
-            val = clean_num(d.get("Market Value", ""))
+        # ── Totals line ───────────────────────────────────────────────────
+        if any(t in sym.lower() for t in ("account total", "positions total", "total")):
+            val = clean_num(d.get("market_value", ""))
             if val is not None:
                 current["total_equity"] = val
             continue
 
-        # ── Regular equity/ETF/bond position ─────────────────────────────
-        shares = clean_num(d.get("Qty", ""))
-        price = clean_num(d.get("Price", ""))
-        mkt_val = clean_num(d.get("Market Value", ""))
-        cost = clean_num(d.get("Cost Basis", ""))
-        gl_dollar = clean_num(d.get("Gain/Loss $", ""))
-        gl_pct = clean_num(d.get("Gain/Loss %", ""))
-        pct_acct = clean_num(d.get("% Of Account", ""))
-
+        # ── Regular position ──────────────────────────────────────────────
+        shares = clean_num(d.get("shares", ""))
+        price = clean_num(d.get("price", ""))
+        mkt_val = clean_num(d.get("market_value", ""))
+        cost = clean_num(d.get("cost_basis", ""))
+        gl = clean_num(d.get("gain_loss", ""))
+        gl_pct = clean_num(d.get("gain_loss_pct", ""))
+        pct_acct = clean_num(d.get("pct_of_account", ""))
         avg_cost = round(cost / shares, 4) if (cost and shares and shares > 0) else None
 
         current["positions"].append({
             "symbol": sym,
-            "name": d.get("Description", ""),
+            "name": d.get("name", ""),
             "shares": shares,
             "price": price,
             "market_value": mkt_val,
             "cost_basis": cost,
             "avg_cost_per_share": avg_cost,
-            "unrealized_gain_loss": gl_dollar,
+            "unrealized_gain_loss": gl,
             "unrealized_gain_loss_pct": gl_pct,
             "pct_of_account": pct_acct,
-            "security_type": d.get("Security Type", ""),
+            "security_type": d.get("security_type", ""),
         })
 
     if current is not None:
@@ -181,7 +220,6 @@ def build_summary(accounts):
         reverse=True,
     )[:10]
 
-    # Positions with largest gains (profit-taking candidates)
     gain_candidates = sorted(
         [p for p in all_pos if (p.get("unrealized_gain_loss_pct") or 0) > 20],
         key=lambda x: x.get("unrealized_gain_loss_pct", 0),
@@ -206,6 +244,17 @@ def build_summary(accounts):
 
 def write_markdown(data, path):
     s = data["summary"]
+
+    def f(v, sign=False):
+        if v is None:
+            return "N/A"
+        return f"${v:+,.2f}" if sign else f"${v:,.2f}"
+
+    def fp(v, sign=False):
+        if v is None:
+            return "N/A"
+        return f"{v:+.1f}%" if sign else f"{v:.1f}%"
+
     lines = [
         "# Portfolio Summary",
         "",
@@ -219,11 +268,11 @@ def write_markdown(data, path):
         "",
         "| Metric | Value |",
         "|--------|-------|",
-        f"| Total Equity | ${s['total_equity']:>12,.2f} |",
-        f"| Total Cash | ${s['total_cash']:>14,.2f} |",
-        f"| Market Value (Invested) | ${s['total_invested_market_value']:>6,.2f} |",
-        f"| Total Cost Basis | ${s['total_cost_basis']:>10,.2f} |",
-        f"| Unrealized Gain/Loss | ${s['total_unrealized_gain_loss']:>+10,.2f} ({s['total_unrealized_gain_loss_pct']:+.1f}%) |",
+        f"| Total Equity | {f(s['total_equity'])} |",
+        f"| Total Cash | {f(s['total_cash'])} |",
+        f"| Market Value (Invested) | {f(s['total_invested_market_value'])} |",
+        f"| Total Cost Basis | {f(s['total_cost_basis'])} |",
+        f"| Unrealized Gain/Loss | {f(s['total_unrealized_gain_loss'], sign=True)} ({fp(s['total_unrealized_gain_loss_pct'], sign=True)}) |",
         f"| Accounts | {s['total_accounts']} |",
         f"| Positions | {s['total_positions']} |",
         "",
@@ -237,42 +286,30 @@ def write_markdown(data, path):
 
     for acct in data["accounts"]:
         lines += [
-            f"---",
+            "---",
             "",
             f"## Account: {acct['account_id']}",
             "",
-            f"**Total Equity:** ${acct['total_equity']:,.2f}  |  **Cash:** ${acct['cash']:,.2f}",
+            f"**Total Equity:** {f(acct['total_equity'])}  |  **Cash:** {f(acct['cash'])}",
             "",
         ]
-
         if acct["positions"]:
             lines += [
                 "| Symbol | Name | Shares | Price | Mkt Value | Cost Basis | Unreal G/L | G/L % | % Acct |",
                 "|--------|------|-------:|------:|----------:|-----------:|-----------:|------:|-------:|",
             ]
             for p in sorted(acct["positions"], key=lambda x: x.get("market_value") or 0, reverse=True):
-                def fmt(v, prefix="$", suffix=""):
-                    return f"{prefix}{v:,.2f}{suffix}" if v is not None else "N/A"
-                def fmtp(v):
-                    return f"{v:+.1f}%" if v is not None else "N/A"
-                def fmts(v):
-                    return f"{v:,.0f}" if v is not None else "N/A"
-
+                sh = f"{p['shares']:,.4f}" if p.get("shares") else "N/A"
                 lines.append(
-                    f"| {p['symbol']} | {p['name'][:28]} | {fmts(p.get('shares'))} | "
-                    f"{fmt(p.get('price'))} | {fmt(p.get('market_value'))} | "
-                    f"{fmt(p.get('cost_basis'))} | {fmt(p.get('unrealized_gain_loss'), prefix='$')} | "
-                    f"{fmtp(p.get('unrealized_gain_loss_pct'))} | "
-                    f"{fmtp(p.get('pct_of_account')).replace('+', '')} |"
+                    f"| {p['symbol']} | {p['name'][:28]} | {sh} | "
+                    f"{f(p.get('price'))} | {f(p.get('market_value'))} | "
+                    f"{f(p.get('cost_basis'))} | {f(p.get('unrealized_gain_loss'), sign=True)} | "
+                    f"{fp(p.get('unrealized_gain_loss_pct'), sign=True)} | "
+                    f"{fp(p.get('pct_of_account'))} |"
                 )
             lines.append("")
 
-    lines += [
-        "---",
-        "",
-        "*DISCLAIMER: For educational/research purposes only. Not financial advice.*",
-    ]
-
+    lines += ["---", "", "*DISCLAIMER: For educational/research purposes only. Not financial advice.*"]
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -282,38 +319,41 @@ def main():
     INPUT_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_JSON.parent.mkdir(parents=True, exist_ok=True)
 
-    csv_files = sorted(
-        list(INPUT_DIR.glob("*.csv")) + list(INPUT_DIR.glob("*.CSV")),
-        key=lambda x: x.stat().st_mtime,
-        reverse=True,
-    )
+    seen = set()
+    unique = []
+    for f in list(INPUT_DIR.glob("*.csv")) + list(INPUT_DIR.glob("*.CSV")):
+        key = f.resolve()
+        if key not in seen:
+            seen.add(key)
+            unique.append(f)
+    csv_files = sorted(unique, key=lambda x: x.stat().st_mtime, reverse=True)
 
     if not csv_files:
-        print(f"\nNo CSV files found in:  {INPUT_DIR}")
+        print(f"\nNo CSV files found in: {INPUT_DIR}")
         print("\nSteps to export from Schwab:")
-        print("  1. Log in → Accounts tab → Positions")
-        print("  2. Click the Export icon (top-right, looks like a page with arrow)")
+        print("  1. Log in -> Accounts tab -> Positions")
+        print("  2. Click the Export icon (top-right)")
         print("  3. Save the file")
-        print(f"  4. Move it into:  {INPUT_DIR}")
+        print(f"  4. Move it into: {INPUT_DIR}")
         print("  5. Run this script again\n")
         sys.exit(1)
 
-    latest = csv_files[0]
-    print(f"Parsing: {latest.name}")
-
-    accounts = parse_schwab_csv(latest)
+    accounts = []
+    for csv_file in csv_files:
+        print(f"Parsing: {csv_file.name}")
+        accounts.extend(parse_schwab_csv(csv_file))
 
     if not accounts or not any(a["positions"] for a in accounts):
-        print("\nNo positions found. Make sure this is a Schwab Positions export.")
-        print("The file should have a 'Symbol' column with your holdings.")
+        print("\nNo positions found. Make sure these are Schwab Positions exports.")
         sys.exit(1)
 
     summary = build_summary(accounts)
+    source_names = ", ".join(f.name for f in csv_files)
 
     data = {
         "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "source": f"Schwab — {latest.name}",
-        "source_file": latest.name,
+        "source": f"Schwab -- {len(csv_files)} accounts",
+        "source_files": [f.name for f in csv_files],
         "accounts": accounts,
         "summary": summary,
     }
@@ -334,8 +374,8 @@ def main():
     if s["profit_taking_candidates"]:
         print(f"  Profit Candidates: {', '.join(s['profit_taking_candidates'])}")
     print(f"{'='*54}")
-    print(f"\n  Saved → {OUTPUT_JSON.name}")
-    print(f"  Saved → {OUTPUT_MD.name}")
+    print(f"\n  Saved -> {OUTPUT_JSON.name}")
+    print(f"  Saved -> {OUTPUT_MD.name}")
     print(f"\n  Run /trade portfolio  for full allocation analysis")
     print(f"  Run /trade guidance   for profit-taking & income moves\n")
 

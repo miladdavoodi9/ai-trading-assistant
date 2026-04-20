@@ -1,0 +1,1266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Trading Dashboard</title>
+<style>
+/* ── Reset & Base ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:       #09090f;
+  --surface:  #111118;
+  --card:     #16161f;
+  --border:   #1f1f2e;
+  --border2:  #2a2a3d;
+  --text:     #e2e8f0;
+  --muted:    #64748b;
+  --dim:      #94a3b8;
+  --green:    #22c55e;
+  --red:      #ef4444;
+  --yellow:   #eab308;
+  --accent:   #6366f1;
+  --accent2:  #818cf8;
+  --accent3:  #a5b4fc;
+  --buy:      #22c55e;
+  --hold:     #eab308;
+  --sell:     #ef4444;
+  --avoid:    #f97316;
+  --radius:   10px;
+  --shadow:   0 4px 24px rgba(0,0,0,.4);
+}
+html { font-size: 14px; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  line-height: 1.5;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+a { color: var(--accent2); text-decoration: none; }
+/* ── Scrollbar ─────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--surface); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+/* ── Layout ───────────────────────────────────────────────────── */
+#app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+/* ── Top Nav ──────────────────────────────────────────────────── */
+#topbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-shrink: 0;
+  z-index: 100;
+}
+#topbar .logo {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: .5px;
+  color: var(--accent2);
+  white-space: nowrap;
+}
+#topbar .logo span { color: var(--muted); font-weight: 400; }
+.portfolio-value {
+  display: flex; align-items: baseline; gap: 8px;
+}
+.portfolio-value .total {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -.5px;
+}
+.portfolio-value .change {
+  font-size: .9rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 5px;
+}
+.change.pos { background: rgba(34,197,94,.12); color: var(--green); }
+.change.neg { background: rgba(239,68,68,.12); color: var(--red); }
+.change.flat { background: rgba(100,116,139,.12); color: var(--dim); }
+.topbar-meta {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: var(--muted);
+  font-size: .8rem;
+}
+#refresh-btn {
+  background: var(--border);
+  border: 1px solid var(--border2);
+  color: var(--dim);
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: .8rem;
+  transition: all .15s;
+  white-space: nowrap;
+}
+#refresh-btn:hover { background: var(--border2); color: var(--text); }
+#refresh-btn.spinning { animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Main Content ─────────────────────────────────────────────── */
+#main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+#content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── Account Cards ────────────────────────────────────────────── */
+#accounts-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+.acct-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: border-color .2s;
+}
+.acct-card:hover { border-color: var(--border2); }
+.acct-card .acct-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.acct-card .acct-name {
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--accent3);
+  letter-spacing: .3px;
+}
+.acct-card .acct-type-badge {
+  font-size: .7rem;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--border);
+  color: var(--muted);
+}
+.acct-card .acct-total {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -.5px;
+}
+.acct-card .acct-day {
+  font-size: .82rem;
+  font-weight: 600;
+}
+.acct-card .acct-holdings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.holding-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.holding-bar-row:hover .hbar-sym { color: var(--accent2); }
+.hbar-sym {
+  width: 44px;
+  font-size: .8rem;
+  font-weight: 700;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.hbar-track {
+  flex: 1;
+  height: 5px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.hbar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width .5s ease;
+}
+.hbar-pct {
+  width: 36px;
+  text-align: right;
+  font-size: .75rem;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.hbar-change {
+  width: 54px;
+  text-align: right;
+  font-size: .75rem;
+  flex-shrink: 0;
+}
+.acct-strategy-btn {
+  background: rgba(99,102,241,.1);
+  border: 1px solid rgba(99,102,241,.3);
+  color: var(--accent2);
+  padding: 8px 14px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: .8rem;
+  font-weight: 600;
+  transition: all .15s;
+  text-align: left;
+  width: 100%;
+}
+.acct-strategy-btn:hover {
+  background: rgba(99,102,241,.2);
+  border-color: var(--accent);
+}
+.acct-strategy-btn.loading {
+  opacity: .7;
+  cursor: wait;
+}
+.strategy-output {
+  font-size: .8rem;
+  color: var(--dim);
+  line-height: 1.65;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  display: none;
+  padding: 10px;
+  background: var(--surface);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+.strategy-output.visible { display: block; }
+
+/* ── Holdings Table ───────────────────────────────────────────── */
+#holdings-section {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.section-title {
+  font-size: .9rem;
+  font-weight: 700;
+  letter-spacing: .3px;
+  color: var(--text);
+}
+.section-subtitle {
+  font-size: .75rem;
+  color: var(--muted);
+}
+.table-wrap { overflow-x: auto; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+thead th {
+  padding: 10px 14px;
+  text-align: left;
+  font-size: .72rem;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+thead th.right { text-align: right; }
+tbody tr {
+  border-bottom: 1px solid rgba(31,31,46,.6);
+  cursor: pointer;
+  transition: background .12s;
+}
+tbody tr:last-child { border-bottom: none; }
+tbody tr:hover { background: rgba(99,102,241,.04); }
+tbody tr.selected { background: rgba(99,102,241,.08); }
+td {
+  padding: 10px 14px;
+  font-size: .84rem;
+  white-space: nowrap;
+}
+td.right { text-align: right; }
+.sym-cell {
+  display: flex;
+  flex-direction: column;
+}
+.sym-cell .sym { font-weight: 700; font-size: .9rem; }
+.sym-cell .acct-tag {
+  font-size: .68rem;
+  color: var(--muted);
+  margin-top: 1px;
+}
+.gl-chip {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: .78rem;
+  font-weight: 600;
+}
+.gl-chip.pos { background: rgba(34,197,94,.1); color: var(--green); }
+.gl-chip.neg { background: rgba(239,68,68,.1); color: var(--red); }
+.gl-chip.flat { background: rgba(100,116,139,.1); color: var(--dim); }
+
+/* ── Agents Panel ─────────────────────────────────────────────── */
+#agents-section {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.agents-top {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.agents-top label {
+  font-size: .8rem;
+  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: .3px;
+  white-space: nowrap;
+}
+#ticker-select {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: .85rem;
+  min-width: 160px;
+  cursor: pointer;
+}
+#ticker-select:focus { outline: 2px solid var(--accent); }
+.agents-grid {
+  padding: 14px 18px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.agent-btn {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  color: var(--dim);
+  padding: 8px 16px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: .82rem;
+  font-weight: 600;
+  transition: all .15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.agent-btn:hover:not(:disabled) {
+  background: rgba(99,102,241,.12);
+  border-color: var(--accent);
+  color: var(--accent2);
+}
+.agent-btn.active {
+  background: rgba(99,102,241,.18);
+  border-color: var(--accent2);
+  color: var(--accent2);
+}
+.agent-btn:disabled { opacity: .45; cursor: wait; }
+.agent-btn .icon { font-size: .95rem; }
+#agent-output-wrap {
+  margin: 0 18px 18px;
+  display: none;
+}
+#agent-output-wrap.visible { display: block; }
+#agent-output-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+#agent-output-title {
+  font-size: .8rem;
+  font-weight: 700;
+  color: var(--accent2);
+  letter-spacing: .3px;
+}
+#agent-output-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+#agent-output-close:hover { color: var(--text); background: var(--border); }
+#agent-output {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 16px;
+  font-size: .82rem;
+  line-height: 1.7;
+  color: var(--dim);
+  max-height: 450px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+}
+
+/* ── Stock Detail Panel ───────────────────────────────────────── */
+#detail-panel {
+  width: 380px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  transform: translateX(100%);
+  transition: transform .3s cubic-bezier(.4,0,.2,1);
+  display: flex;
+  flex-direction: column;
+}
+#detail-panel.open {
+  transform: translateX(0);
+}
+#detail-close {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 10;
+}
+#detail-close-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1.2rem;
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+#detail-close-btn:hover { background: var(--border); color: var(--text); }
+#detail-sym { font-weight: 700; font-size: 1rem; color: var(--text); }
+#detail-body { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+
+.detail-price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+#detail-price { font-size: 1.8rem; font-weight: 700; letter-spacing: -.5px; }
+#detail-change { font-size: .9rem; font-weight: 600; }
+
+.detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.detail-section-title {
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .6px;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+  margin-bottom: 2px;
+}
+.kv-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: .8rem;
+}
+.kv-row .k { color: var(--muted); }
+.kv-row .v { font-weight: 600; color: var(--text); }
+.analyst-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: .75rem;
+  font-weight: 700;
+}
+.analyst-badge.buy, .analyst-badge.strong\ buy { background: rgba(34,197,94,.15); color: var(--green); }
+.analyst-badge.hold { background: rgba(234,179,8,.15); color: var(--yellow); }
+.analyst-badge.sell, .analyst-badge.underperform { background: rgba(239,68,68,.15); color: var(--red); }
+
+/* ── Sparkline ────────────────────────────────────────────────── */
+#sparkline-canvas {
+  width: 100%;
+  height: 80px;
+  display: block;
+}
+.sparkline-wrap {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Holdings in detail ───────────────────────────────────────── */
+.detail-holding-row {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: .8rem;
+}
+.detail-holding-row .dhr-top {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 600;
+}
+.detail-holding-row .dhr-sub {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: .75rem;
+}
+
+/* ── Detail News ──────────────────────────────────────────────── */
+.news-item {
+  font-size: .78rem;
+  color: var(--dim);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  line-height: 1.4;
+}
+.news-item:last-child { border-bottom: none; }
+
+/* ── Misc ─────────────────────────────────────────────────────── */
+.pos { color: var(--green); }
+.neg { color: var(--red); }
+.flat { color: var(--muted); }
+.loading-spinner {
+  display: inline-block;
+  width: 12px; height: 12px;
+  border: 2px solid var(--border2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--border) 25%, var(--border2) 50%, var(--border) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 4px;
+  height: 14px;
+}
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+#status-bar {
+  padding: 4px 24px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  font-size: .72rem;
+  color: var(--muted);
+  display: flex;
+  gap: 20px;
+  flex-shrink: 0;
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Top Bar ─────────────────────────────────────────── -->
+  <div id="topbar">
+    <div class="logo">AI Trading <span>Dashboard</span></div>
+    <div class="portfolio-value">
+      <div class="total" id="hdr-total">—</div>
+      <div class="change flat" id="hdr-change">—</div>
+    </div>
+    <div class="topbar-meta">
+      <span id="hdr-accounts">— accounts</span>
+      <span id="hdr-positions">— positions</span>
+      <span id="hdr-updated">—</span>
+      <button id="refresh-btn" onclick="loadPortfolio()">↻ Refresh</button>
+    </div>
+  </div>
+
+  <!-- ── Main ───────────────────────────────────────────── -->
+  <div id="main">
+    <div id="content">
+
+      <!-- Account Cards -->
+      <div id="accounts-row"></div>
+
+      <!-- Holdings Table -->
+      <div id="holdings-section">
+        <div class="section-header">
+          <div>
+            <div class="section-title">All Holdings</div>
+            <div class="section-subtitle" id="holdings-sub">Loading…</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input id="holdings-search" placeholder="Filter…" style="
+              background:var(--surface);border:1px solid var(--border2);color:var(--text);
+              padding:5px 10px;border-radius:6px;font-size:.8rem;width:120px;
+            " oninput="filterTable(this.value)">
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Name</th>
+                <th class="right">Shares</th>
+                <th class="right">Live Price</th>
+                <th class="right">Live Value</th>
+                <th class="right">Cost Basis</th>
+                <th class="right">Unreal G/L</th>
+                <th class="right">G/L %</th>
+                <th class="right">Day Chg</th>
+                <th class="right">% Acct</th>
+              </tr>
+            </thead>
+            <tbody id="holdings-body">
+              <tr><td colspan="10" style="text-align:center;padding:30px;color:var(--muted);">
+                <span class="loading-spinner"></span> Loading positions…
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Agents Section -->
+      <div id="agents-section">
+        <div class="section-header">
+          <div>
+            <div class="section-title">AI Agents</div>
+            <div class="section-subtitle">Run analysis on any holding</div>
+          </div>
+        </div>
+        <div class="agents-top">
+          <label>ANALYZE:</label>
+          <select id="ticker-select" onchange="setAgentTicker(this.value)">
+            <option value="">— select a stock —</option>
+          </select>
+          <span id="agent-ticker-display" style="font-size:.8rem;color:var(--muted);"></span>
+        </div>
+        <div class="agents-grid">
+          <button class="agent-btn" onclick="runAgent('quick')"  title="60-second snapshot"><span class="icon">⚡</span>Quick Snapshot</button>
+          <button class="agent-btn" onclick="runAgent('technical')" title="Technical analysis"><span class="icon">📊</span>Technical</button>
+          <button class="agent-btn" onclick="runAgent('fundamental')" title="Fundamental analysis"><span class="icon">🏗</span>Fundamental</button>
+          <button class="agent-btn" onclick="runAgent('sentiment')" title="Sentiment & momentum"><span class="icon">🎯</span>Sentiment</button>
+          <button class="agent-btn" onclick="runAgent('options')" title="Options strategies"><span class="icon">📈</span>Options</button>
+          <button class="agent-btn" onclick="runAgent('risk')" title="Risk assessment"><span class="icon">🛡</span>Risk</button>
+          <button class="agent-btn" onclick="runAgent('thesis')" title="Full investment thesis"><span class="icon">📝</span>Thesis</button>
+        </div>
+        <div id="agent-output-wrap">
+          <div id="agent-output-header">
+            <div id="agent-output-title"></div>
+            <button id="agent-output-close" onclick="closeAgentOutput()">✕</button>
+          </div>
+          <div id="agent-output"></div>
+        </div>
+      </div>
+
+      <!-- Bottom padding -->
+      <div style="height:20px;"></div>
+    </div>
+
+    <!-- ── Detail Panel ──────────────────────────────────── -->
+    <div id="detail-panel">
+      <div id="detail-close">
+        <div id="detail-sym">—</div>
+        <button id="detail-close-btn" onclick="closeDetail()">✕</button>
+      </div>
+      <div id="detail-body">
+        <div style="color:var(--muted);text-align:center;padding:40px 0;">
+          Select a stock to view details
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Status Bar ──────────────────────────────────────── -->
+  <div id="status-bar">
+    <span id="sb-cost">Cost Basis: —</span>
+    <span id="sb-gl">Unrealized G/L: —</span>
+    <span id="sb-cash">Net Cash: —</span>
+    <span style="margin-left:auto" id="sb-disclaimer">For educational purposes only — not financial advice</span>
+  </div>
+</div>
+
+<script>
+/* ── State ──────────────────────────────────────────────────────── */
+let _portfolio = null;
+let _selectedTicker = '';
+let _agentAbort = null;
+let _detailSym = null;
+
+/* ── Utilities ──────────────────────────────────────────────────── */
+const fmt  = (v, d=2) => v == null ? '—' : '$' + Number(v).toLocaleString('en-US', {minimumFractionDigits:d,maximumFractionDigits:d});
+const fmtB = v => {
+  if (v == null) return '—';
+  if (Math.abs(v) >= 1e12) return '$' + (v/1e12).toFixed(2) + 'T';
+  if (Math.abs(v) >= 1e9)  return '$' + (v/1e9).toFixed(2) + 'B';
+  if (Math.abs(v) >= 1e6)  return '$' + (v/1e6).toFixed(1) + 'M';
+  return '$' + Number(v).toLocaleString();
+};
+const fmtPct = (v, sign=false) => v == null ? '—' : (sign && v > 0 ? '+' : '') + Number(v).toFixed(2) + '%';
+const fmtNum = v => v == null ? '—' : Number(v).toLocaleString();
+const glClass = v => v > 0 ? 'pos' : v < 0 ? 'neg' : 'flat';
+const glChip  = (v, pct=false) => {
+  if (v == null) return '—';
+  const cls = v > 0 ? 'pos' : v < 0 ? 'neg' : 'flat';
+  const sign = v > 0 ? '+' : '';
+  const txt = pct ? sign + v.toFixed(2) + '%' : sign + fmt(v);
+  return `<span class="gl-chip ${cls}">${txt}</span>`;
+};
+
+/* ── Data Loading ───────────────────────────────────────────────── */
+async function loadPortfolio() {
+  const btn = document.getElementById('refresh-btn');
+  btn.classList.add('spinning');
+  btn.disabled = true;
+  try {
+    const res  = await fetch('/api/portfolio');
+    _portfolio = await res.json();
+    renderAll();
+  } catch(e) {
+    console.error(e);
+  } finally {
+    btn.classList.remove('spinning');
+    btn.disabled = false;
+  }
+}
+
+/* ── Render All ─────────────────────────────────────────────────── */
+function renderAll() {
+  const d = _portfolio;
+  if (!d) return;
+
+  // Top bar
+  document.getElementById('hdr-total').textContent  = fmt(d.live_total);
+  const chg = d.live_day_change;
+  const chgEl = document.getElementById('hdr-change');
+  chgEl.textContent = `${chg >= 0 ? '+' : ''}${fmt(chg)} (${fmtPct(d.live_day_change_pct, true)})`;
+  chgEl.className = 'change ' + (chg > 0 ? 'pos' : chg < 0 ? 'neg' : 'flat');
+  document.getElementById('hdr-accounts').textContent  = `${d.accounts.length} accounts`;
+  document.getElementById('hdr-positions').textContent = `${d.summary.total_positions} positions`;
+  document.getElementById('hdr-updated').textContent   = `Prices @ ${d.prices_at}`;
+
+  // Status bar
+  document.getElementById('sb-cost').textContent = `Cost Basis: ${fmt(d.summary.total_cost_basis)}`;
+  document.getElementById('sb-gl').textContent   = `Unrealized G/L: ${chg >= 0 ? '+' : ''}${fmt(d.summary.total_unrealized_gain_loss)} (${fmtPct(d.summary.total_unrealized_gain_loss_pct, true)})`;
+  document.getElementById('sb-cash').textContent = `Net Cash: ${fmt(d.summary.total_cash)}`;
+
+  renderAccounts(d.accounts);
+  renderHoldings(d.accounts);
+  populateTickerSelect(d.accounts);
+  if (_detailSym) loadDetail(_detailSym);
+}
+
+/* ── Account Cards ──────────────────────────────────────────────── */
+function accountLabel(id) {
+  if (id.startsWith('Individual 401')) return '401(k)';
+  if (id.startsWith('Rollover'))       return 'IRA';
+  return 'Taxable';
+}
+
+function renderAccounts(accounts) {
+  const row = document.getElementById('accounts-row');
+  row.innerHTML = '';
+
+  accounts.forEach(acct => {
+    const lv  = acct.live_value;
+    const ldc = acct.live_day_change;
+    const label = accountLabel(acct.account_id);
+    const maxPct = Math.max(...acct.positions.map(p => p.pct_of_account || 0));
+
+    let holdBars = acct.positions
+      .sort((a,b) => (b.pct_of_account||0) - (a.pct_of_account||0))
+      .map(p => {
+        const pct   = p.pct_of_account || 0;
+        const barW  = Math.round(pct / (maxPct || 1) * 100);
+        const gl    = p.live_gain_loss_pct != null ? p.live_gain_loss_pct : p.unrealized_gain_loss_pct;
+        const glCls = gl > 0 ? 'pos' : gl < 0 ? 'neg' : 'flat';
+        return `
+          <div class="holding-bar-row" onclick="selectStock('${p.symbol}')">
+            <div class="hbar-sym">${p.symbol}</div>
+            <div class="hbar-track"><div class="hbar-fill" style="width:${barW}%"></div></div>
+            <div class="hbar-pct">${pct.toFixed(1)}%</div>
+            <div class="hbar-change ${glCls}">${gl != null ? (gl>0?'+':'')+gl.toFixed(1)+'%' : '—'}</div>
+          </div>`;
+      }).join('');
+
+    const card = document.createElement('div');
+    card.className = 'acct-card';
+    card.dataset.accountId = acct.account_id;
+    card.innerHTML = `
+      <div class="acct-header">
+        <div class="acct-name">${acct.account_id}</div>
+        <div class="acct-type-badge">${label}</div>
+      </div>
+      <div>
+        <div class="acct-total">${fmt(lv)}</div>
+        <div class="acct-day ${glClass(ldc)}" style="font-size:.82rem;font-weight:600;margin-top:2px;">
+          ${ldc >= 0 ? '+' : ''}${fmt(ldc)} today
+        </div>
+      </div>
+      <div class="acct-holdings">${holdBars}</div>
+      <button class="acct-strategy-btn" onclick="loadStrategy('${acct.account_id}', this)">
+        ✦ Get Account Strategy
+      </button>
+      <div class="strategy-output" id="strategy-${acct.account_id.replace(/[^a-z0-9]/gi,'-')}"></div>
+    `;
+    row.appendChild(card);
+  });
+}
+
+/* ── Holdings Table ─────────────────────────────────────────────── */
+let _allRows = [];
+
+function renderHoldings(accounts) {
+  // Flatten all positions across accounts
+  const rows = [];
+  for (const acct of accounts) {
+    for (const p of acct.positions) {
+      rows.push({...p, _account: acct.account_id});
+    }
+  }
+  // Sort by live_value desc
+  rows.sort((a,b) => (b.live_value||0) - (a.live_value||0));
+  _allRows = rows;
+
+  const totalMV = rows.reduce((s,r) => s + (r.live_value||0), 0);
+  document.getElementById('holdings-sub').textContent =
+    `${rows.length} positions across ${accounts.length} accounts — ${fmt(totalMV)} invested`;
+
+  renderHoldingsRows(_allRows);
+}
+
+function renderHoldingsRows(rows) {
+  const tbody = document.getElementById('holdings-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--muted);">No positions found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(p => {
+    const gl    = p.live_gain_loss;
+    const glp   = p.live_gain_loss_pct;
+    const dayC  = p.live_day_change;
+    const dayPct = p.live_day_change_pct;
+    const isSelected = p.symbol === _detailSym && p._account === (_portfolio?.accounts?.find(a=>a.positions.some(pos=>pos.symbol===_detailSym))?.account_id);
+
+    return `<tr onclick="selectStock('${p.symbol}')" data-sym="${p.symbol}" class="${isSelected?'selected':''}">
+      <td>
+        <div class="sym-cell">
+          <div class="sym">${p.symbol}</div>
+          <div class="acct-tag">${accountLabel(p._account)}</div>
+        </div>
+      </td>
+      <td style="color:var(--dim);max-width:160px;overflow:hidden;text-overflow:ellipsis;">${(p.name||'').substring(0,24)}</td>
+      <td class="right">${(p.shares||0).toLocaleString(undefined,{maximumFractionDigits:4})}</td>
+      <td class="right" style="font-weight:600;">${fmt(p.live_price)}</td>
+      <td class="right" style="font-weight:600;">${fmt(p.live_value)}</td>
+      <td class="right" style="color:var(--muted);">${fmt(p.cost_basis)}</td>
+      <td class="right">${glChip(gl)}</td>
+      <td class="right">${glChip(glp, true)}</td>
+      <td class="right ${glClass(dayC)}">${dayC != null ? (dayC>=0?'+':'')+fmt(dayC) : '—'}</td>
+      <td class="right" style="color:var(--muted);">${p.pct_of_account != null ? p.pct_of_account.toFixed(1)+'%' : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function filterTable(q) {
+  q = q.trim().toLowerCase();
+  if (!q) { renderHoldingsRows(_allRows); return; }
+  const filtered = _allRows.filter(p =>
+    p.symbol.toLowerCase().includes(q) ||
+    (p.name||'').toLowerCase().includes(q) ||
+    p._account.toLowerCase().includes(q)
+  );
+  renderHoldingsRows(filtered);
+}
+
+/* ── Ticker Select ──────────────────────────────────────────────── */
+function populateTickerSelect(accounts) {
+  const sel = document.getElementById('ticker-select');
+  const syms = [...new Set(accounts.flatMap(a => a.positions.map(p => p.symbol)))].sort();
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">— select a stock —</option>' +
+    syms.map(s => `<option value="${s}"${s===prev?' selected':''}>${s}</option>`).join('');
+  if (prev && syms.includes(prev)) _selectedTicker = prev;
+}
+
+function setAgentTicker(sym) {
+  _selectedTicker = sym;
+  document.getElementById('agent-ticker-display').textContent = sym ? `Selected: ${sym}` : '';
+}
+
+/* ── Stock Selection ────────────────────────────────────────────── */
+function selectStock(sym) {
+  _detailSym = sym;
+  _selectedTicker = sym;
+
+  // Update select
+  const sel = document.getElementById('ticker-select');
+  sel.value = sym;
+  document.getElementById('agent-ticker-display').textContent = `Selected: ${sym}`;
+
+  // Highlight table rows
+  document.querySelectorAll('#holdings-body tr').forEach(tr => {
+    tr.classList.toggle('selected', tr.dataset.sym === sym);
+  });
+
+  // Open and populate panel
+  document.getElementById('detail-panel').classList.add('open');
+  loadDetail(sym);
+}
+
+function closeDetail() {
+  document.getElementById('detail-panel').classList.remove('open');
+  _detailSym = null;
+  document.querySelectorAll('#holdings-body tr').forEach(tr => tr.classList.remove('selected'));
+}
+
+async function loadDetail(sym) {
+  document.getElementById('detail-sym').textContent = sym;
+  const body = document.getElementById('detail-body');
+  body.innerHTML = `<div style="text-align:center;padding:40px;color:var(--muted);"><span class="loading-spinner"></span> Loading ${sym}…</div>`;
+
+  try {
+    const res  = await fetch(`/api/stock/${sym}`);
+    const data = await res.json();
+    renderDetail(data);
+  } catch(e) {
+    body.innerHTML = `<div style="color:var(--red);padding:20px;">${e.message}</div>`;
+  }
+}
+
+function renderDetail(d) {
+  const body = document.getElementById('detail-body');
+  const sym  = d.symbol;
+
+  // Find holdings across accounts
+  const holdings = _portfolio?.accounts?.flatMap(a =>
+    a.positions.filter(p => p.symbol === sym).map(p => ({...p, _account: a.account_id}))
+  ) || [];
+
+  // Price change
+  const priceChg = d.price && holdings[0]?.cost_basis
+    ? null  // don't show day change here — too confusing
+    : null;
+
+  const curPrice = d.price || holdings[0]?.live_price;
+  const prevClose = null;
+
+  // Analyst badge
+  const rating = d.analyst_rating || '';
+  const ratingLower = rating.toLowerCase();
+  let ratingBadge = rating
+    ? `<span class="analyst-badge ${ratingLower}">${rating}</span>`
+    : '—';
+
+  // Holdings rows
+  const holdingRows = holdings.map(h => {
+    const lv  = h.live_value || h.market_value;
+    const gl  = h.live_gain_loss || h.unrealized_gain_loss;
+    const glp = h.live_gain_loss_pct || h.unrealized_gain_loss_pct;
+    return `
+      <div class="detail-holding-row">
+        <div class="dhr-top">
+          <span>${accountLabel(h._account)}</span>
+          <span>${fmt(lv)}</span>
+        </div>
+        <div class="dhr-sub">
+          <span>${h.shares} sh @ ${fmt(h.avg_cost_per_share)} avg</span>
+          <span class="${glClass(gl)}">${gl>=0?'+':''}${fmt(gl)} (${glp>=0?'+':''}${glp?.toFixed(1)}%)</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  // News
+  const newsHtml = (d.news||[]).length
+    ? d.news.map(n => `<div class="news-item">${n}</div>`).join('')
+    : '<div class="news-item" style="color:var(--muted);">No recent news</div>';
+
+  body.innerHTML = `
+    <div class="detail-price-row">
+      <div id="detail-price">${fmt(curPrice)}</div>
+    </div>
+
+    ${d.description ? `<div style="font-size:.78rem;color:var(--muted);line-height:1.55;">${d.description}…</div>` : ''}
+
+    ${d.sparkline?.length ? `
+    <div class="sparkline-wrap">
+      <canvas id="sparkline-canvas"></canvas>
+    </div>` : ''}
+
+    <div class="detail-section">
+      <div class="detail-section-title">Valuation</div>
+      <div class="kv-row"><span class="k">P/E (Trailing)</span><span class="v">${d.pe_ratio?.toFixed(1) || '—'}</span></div>
+      <div class="kv-row"><span class="k">P/E (Forward)</span><span class="v">${d.fwd_pe?.toFixed(1) || '—'}</span></div>
+      <div class="kv-row"><span class="k">P/S Ratio</span><span class="v">${d.ps_ratio?.toFixed(1) || '—'}</span></div>
+      <div class="kv-row"><span class="k">Market Cap</span><span class="v">${fmtB(d.market_cap)}</span></div>
+    </div>
+
+    <div class="detail-section">
+      <div class="detail-section-title">Price Range</div>
+      <div class="kv-row"><span class="k">52W High</span><span class="v">${fmt(d.week52_high)}</span></div>
+      <div class="kv-row"><span class="k">52W Low</span><span class="v">${fmt(d.week52_low)}</span></div>
+      <div class="kv-row"><span class="k">Avg Volume</span><span class="v">${fmtNum(d.avg_volume)}</span></div>
+      <div class="kv-row"><span class="k">Beta</span><span class="v">${d.beta?.toFixed(2) || '—'}</span></div>
+    </div>
+
+    <div class="detail-section">
+      <div class="detail-section-title">Analyst</div>
+      <div class="kv-row"><span class="k">Consensus</span><span class="v">${ratingBadge}</span></div>
+      <div class="kv-row"><span class="k">Price Target</span><span class="v">${fmt(d.analyst_target)}</span></div>
+      <div class="kv-row"><span class="k">Upside</span><span class="v ${curPrice && d.analyst_target ? glClass(d.analyst_target - curPrice) : ''}">${
+        curPrice && d.analyst_target ? fmtPct((d.analyst_target/curPrice - 1)*100, true) : '—'
+      }</span></div>
+    </div>
+
+    <div class="detail-section">
+      <div class="detail-section-title">My Holdings</div>
+      ${holdingRows || '<div style="color:var(--muted);font-size:.8rem;">Not held</div>'}
+    </div>
+
+    <div class="detail-section">
+      <div class="detail-section-title">Recent News</div>
+      ${newsHtml}
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:6px;padding-top:4px;">
+      <div style="font-size:.72rem;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">Quick Actions</div>
+      ${['quick','technical','fundamental','sentiment','options','risk','thesis'].map(a => `
+        <button onclick="runAgentFor('${a}','${sym}')" style="
+          background:var(--card);border:1px solid var(--border2);color:var(--dim);
+          padding:7px 12px;border-radius:6px;cursor:pointer;font-size:.78rem;font-weight:600;
+          text-align:left;transition:all .15s;
+        " onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent2)';"
+           onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--dim)';">
+          ${agentIcon(a)} Run ${a.charAt(0).toUpperCase()+a.slice(1)} Analysis
+        </button>`).join('')}
+    </div>
+  `;
+
+  // Draw sparkline
+  if (d.sparkline?.length) {
+    setTimeout(() => drawSparkline(d.sparkline), 50);
+  }
+}
+
+/* ── Sparkline ──────────────────────────────────────────────────── */
+function drawSparkline(data) {
+  const canvas = document.getElementById('sparkline-canvas');
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.offsetWidth;
+  const H = canvas.offsetHeight || 80;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const prices = data.map(d => d.close);
+  const mn = Math.min(...prices);
+  const mx = Math.max(...prices);
+  const range = mx - mn || 1;
+  const pad = 8;
+  const isUp = prices[prices.length-1] >= prices[0];
+  const color = isUp ? '#22c55e' : '#ef4444';
+
+  const x = i => pad + (i / (prices.length - 1)) * (W - 2*pad);
+  const y = v => H - pad - ((v - mn) / range) * (H - 2*pad);
+
+  // Fill
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, isUp ? 'rgba(34,197,94,.25)' : 'rgba(239,68,68,.25)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.beginPath();
+  ctx.moveTo(x(0), y(prices[0]));
+  prices.forEach((p, i) => i > 0 && ctx.lineTo(x(i), y(p)));
+  ctx.lineTo(x(prices.length-1), H);
+  ctx.lineTo(x(0), H);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  ctx.moveTo(x(0), y(prices[0]));
+  prices.forEach((p, i) => i > 0 && ctx.lineTo(x(i), y(p)));
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
+/* ── Account Strategy ───────────────────────────────────────────── */
+async function loadStrategy(accountId, btn) {
+  const key = accountId.replace(/[^a-z0-9]/gi, '-');
+  const out = document.getElementById(`strategy-${key}`);
+  if (!out) return;
+
+  if (out.textContent && out.classList.contains('visible')) {
+    out.classList.toggle('visible');
+    btn.textContent = out.classList.contains('visible') ? '▲ Hide Strategy' : '✦ Get Account Strategy';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.classList.add('loading');
+  btn.textContent = '⏳ Generating strategy…';
+  out.textContent = '';
+  out.classList.add('visible');
+
+  const encodedId = encodeURIComponent(accountId);
+  const es = new EventSource(`/api/guidance/${encodedId}`);
+
+  es.onmessage = e => {
+    if (e.data === '[DONE]') {
+      es.close();
+      btn.disabled = false;
+      btn.classList.remove('loading');
+      btn.textContent = '▲ Hide Strategy';
+      return;
+    }
+    try {
+      const { text, error } = JSON.parse(e.data);
+      if (error) { out.textContent += `\nError: ${error}`; es.close(); return; }
+      if (text) out.textContent += text;
+      out.scrollTop = out.scrollHeight;
+    } catch(err) { /* ignore parse errors */ }
+  };
+
+  es.onerror = () => {
+    es.close();
+    btn.disabled = false;
+    btn.classList.remove('loading');
+    btn.textContent = '✦ Get Account Strategy';
+    out.textContent = out.textContent || 'Error fetching strategy. Ensure ANTHROPIC_API_KEY is set.';
+  };
+}
+
+/* ── Agent Runner ───────────────────────────────────────────────── */
+function agentIcon(type) {
+  const icons = {quick:'⚡',technical:'📊',fundamental:'🏗',sentiment:'🎯',options:'📈',risk:'🛡',thesis:'📝',guidance:'🧭'};
+  return icons[type] || '🤖';
+}
+
+function runAgentFor(type, sym) {
+  _selectedTicker = sym;
+  document.getElementById('ticker-select').value = sym;
+  document.getElementById('agent-ticker-display').textContent = `Selected: ${sym}`;
+  document.getElementById('agents-section').scrollIntoView({behavior:'smooth',block:'start'});
+  setTimeout(() => runAgent(type), 400);
+}
+
+async function runAgent(agentType) {
+  const sym = _selectedTicker;
+  if (!sym) {
+    alert('Please select a stock first.');
+    return;
+  }
+
+  // Abort previous
+  if (_agentAbort) { _agentAbort.close(); _agentAbort = null; }
+
+  // UI prep
+  const outputWrap = document.getElementById('agent-output-wrap');
+  const output     = document.getElementById('agent-output');
+  const title      = document.getElementById('agent-output-title');
+  outputWrap.classList.add('visible');
+  output.textContent = '';
+  title.innerHTML = `<span class="loading-spinner"></span> ${agentIcon(agentType)} ${agentType.charAt(0).toUpperCase()+agentType.slice(1)} Analysis — ${sym}`;
+
+  // Disable buttons
+  document.querySelectorAll('.agent-btn').forEach(b => b.disabled = true);
+
+  const url = `/api/agent/${agentType}/${sym}`;
+  const es  = new EventSource(url);
+  _agentAbort = es;
+
+  es.onmessage = e => {
+    if (e.data === '[DONE]') {
+      es.close();
+      _agentAbort = null;
+      title.textContent = `${agentIcon(agentType)} ${agentType.charAt(0).toUpperCase()+agentType.slice(1)} Analysis — ${sym}`;
+      document.querySelectorAll('.agent-btn').forEach(b => b.disabled = false);
+      return;
+    }
+    try {
+      const { text, error } = JSON.parse(e.data);
+      if (error) {
+        output.textContent += `\n⚠ Error: ${error}`;
+        es.close();
+        document.querySelectorAll('.agent-btn').forEach(b => b.disabled = false);
+        return;
+      }
+      if (text) {
+        output.textContent += text;
+        output.scrollTop = output.scrollHeight;
+      }
+    } catch(err) { /* skip */ }
+  };
+
+  es.onerror = () => {
+    es.close();
+    _agentAbort = null;
+    title.textContent = `⚠ ${agentType} Analysis — ${sym}`;
+    document.querySelectorAll('.agent-btn').forEach(b => b.disabled = false);
+    if (!output.textContent) {
+      output.textContent = 'Connection error. Make sure ANTHROPIC_API_KEY is set and the server is running.';
+    }
+  };
+
+  output.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function closeAgentOutput() {
+  if (_agentAbort) { _agentAbort.close(); _agentAbort = null; }
+  document.getElementById('agent-output-wrap').classList.remove('visible');
+  document.querySelectorAll('.agent-btn').forEach(b => b.disabled = false);
+}
+
+/* ── Auto-refresh every 60 seconds ─────────────────────────────── */
+setInterval(async () => {
+  if (!_portfolio) return;
+  try {
+    const res  = await fetch('/api/portfolio');
+    _portfolio = await res.json();
+    renderAll();
+  } catch(e) { /* silent */ }
+}, 60000);
+
+/* ── Init ───────────────────────────────────────────────────────── */
+loadPortfolio();
+</script>
+</body>
+</html>
