@@ -1,0 +1,27 @@
+# Sensitive financial data — never commit
+portfolio/input/
+portfolio/portfolio.json
+portfolio/portfolio.md
+
+# Generated analysis reports
+TRADE-*.md
+TRADE-REPORT.pdf
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Claude local settings (may contain personal config)
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.swp
