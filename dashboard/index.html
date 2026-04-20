@@ -665,10 +665,32 @@ td.right { text-align: right; }
         </div>
         <div class="agents-top">
           <label>ANALYZE:</label>
-          <select id="ticker-select" onchange="setAgentTicker(this.value)">
-            <option value="">— select a stock —</option>
+          <div style="display:flex;align-items:center;gap:0;border:1px solid var(--border2);border-radius:7px;overflow:hidden;background:var(--surface);">
+            <input id="ticker-input" placeholder="Any ticker — AAPL, NVDA…" autocomplete="off"
+              style="background:transparent;border:none;color:var(--text);padding:7px 12px;
+                     font-size:.88rem;width:200px;outline:none;text-transform:uppercase;"
+              oninput="this.value=this.value.toUpperCase()"
+              onkeydown="if(event.key==='Enter') confirmTickerInput()"
+            />
+            <button onclick="confirmTickerInput()" style="
+              background:var(--accent);border:none;color:#fff;padding:7px 14px;
+              font-size:.8rem;font-weight:700;cursor:pointer;transition:background .15s;
+              white-space:nowrap;
+            " onmouseover="this.style.background='var(--accent2)';"
+               onmouseout="this.style.background='var(--accent)';">Go →</button>
+          </div>
+          <span style="color:var(--muted);font-size:.75rem;">or</span>
+          <select id="ticker-select" onchange="setAgentTicker(this.value)" style="
+            background:var(--surface);border:1px solid var(--border2);color:var(--text);
+            padding:6px 10px;border-radius:6px;font-size:.85rem;cursor:pointer;
+          ">
+            <option value="">My holdings ▾</option>
           </select>
-          <span id="agent-ticker-display" style="font-size:.8rem;color:var(--muted);"></span>
+          <span id="agent-ticker-display" style="
+            font-size:.85rem;font-weight:700;color:var(--accent2);
+            background:rgba(99,102,241,.1);padding:4px 12px;border-radius:20px;
+            display:none;
+          "></span>
         </div>
         <div class="agents-grid">
           <button class="agent-btn" onclick="runAgent('quick')"  title="60-second snapshot"><span class="icon">⚡</span>Quick Snapshot</button>
@@ -682,7 +704,17 @@ td.right { text-align: right; }
         <div id="agent-output-wrap">
           <div id="agent-output-header">
             <div id="agent-output-title"></div>
-            <button id="agent-output-close" onclick="closeAgentOutput()">✕</button>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <button id="agent-download-btn" onclick="downloadAgentOutput()" style="
+                background:var(--surface);border:1px solid var(--border2);color:var(--dim);
+                padding:4px 10px;border-radius:5px;cursor:pointer;font-size:.75rem;font-weight:600;
+                display:none;transition:all .15s;
+              " onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent2)';"
+                 onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--dim)';">
+                ↓ Export
+              </button>
+              <button id="agent-output-close" onclick="closeAgentOutput()">✕</button>
+            </div>
           </div>
           <div id="agent-output"></div>
         </div>
@@ -707,6 +739,76 @@ td.right { text-align: right; }
   </div>
 
   <!-- ── Status Bar ──────────────────────────────────────── -->
+  <!-- ── Strategy Modal ───────────────────────────────────── -->
+  <div id="strategy-modal" style="
+    display:none; position:fixed; inset:0; z-index:1000;
+    background:rgba(0,0,0,.75); backdrop-filter:blur(4px);
+    align-items:center; justify-content:center; padding:24px;
+  " onclick="if(event.target===this) closeStrategyModal()">
+    <div style="
+      background:var(--card); border:1px solid var(--border2);
+      border-radius:14px; width:100%; max-width:780px; max-height:90vh;
+      display:flex; flex-direction:column; box-shadow:0 24px 80px rgba(0,0,0,.6);
+    ">
+      <!-- Modal header -->
+      <div style="
+        padding:18px 22px; border-bottom:1px solid var(--border);
+        display:flex; align-items:center; justify-content:space-between; flex-shrink:0;
+      ">
+        <div>
+          <div id="modal-title" style="font-weight:700;font-size:1rem;color:var(--text);">Account Strategy</div>
+          <div id="modal-subtitle" style="font-size:.75rem;color:var(--muted);margin-top:2px;"></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button id="modal-email-btn" onclick="emailStrategy()" style="
+            display:none; background:var(--surface); border:1px solid var(--border2);
+            color:var(--dim); padding:6px 14px; border-radius:6px; cursor:pointer;
+            font-size:.8rem; font-weight:600; transition:all .15s;
+          " onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent2)';"
+             onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--dim)';">
+            ✉ Email
+          </button>
+          <button id="modal-export-btn" onclick="exportStrategy()" style="
+            display:none; background:var(--surface); border:1px solid var(--border2);
+            color:var(--dim); padding:6px 14px; border-radius:6px; cursor:pointer;
+            font-size:.8rem; font-weight:600; transition:all .15s;
+          " onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent2)';"
+             onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--dim)';">
+            ↓ Export PDF
+          </button>
+            <button onclick="minimizeStrategyModal()" title="Minimize" style="
+            background:none; border:none; color:var(--muted); cursor:pointer;
+            font-size:1.1rem; padding:2px 8px; border-radius:5px; line-height:1;
+          " onmouseover="this.style.background='var(--border)';this.style.color='var(--text)';"
+             onmouseout="this.style.background='none';this.style.color='var(--muted)';">─</button>
+          <button onclick="closeStrategyModal()" title="Close" style="
+            background:none; border:none; color:var(--muted); cursor:pointer;
+            font-size:1.3rem; padding:2px 8px; border-radius:5px; line-height:1;
+          " onmouseover="this.style.background='var(--border)';this.style.color='var(--text)';"
+             onmouseout="this.style.background='none';this.style.color='var(--muted)';">✕</button>
+        </div>
+      </div>
+      <!-- Modal body -->
+      <div id="modal-body" style="
+        padding:22px; overflow-y:auto; flex:1;
+        font-size:.88rem; line-height:1.75; color:var(--dim);
+        white-space:pre-wrap; font-family:'SF Mono','Fira Code',Consolas,monospace;
+      "></div>
+    </div>
+  </div>
+
+  <!-- Minimized pill -->
+  <div id="strategy-minimized" onclick="restoreStrategyModal()" style="
+    display:none; position:fixed; bottom:48px; right:24px; z-index:999;
+    background:var(--card); border:1px solid var(--accent); border-radius:24px;
+    padding:8px 18px; cursor:pointer; font-size:.82rem; font-weight:600;
+    color:var(--accent2); box-shadow:0 4px 20px rgba(0,0,0,.4);
+    transition:all .15s;
+  " onmouseover="this.style.background='rgba(99,102,241,.15)';"
+     onmouseout="this.style.background='var(--card)';">
+    ✦ <span id="minimized-label">Strategy</span> ▲
+  </div>
+
   <div id="status-bar">
     <span id="sb-cost">Cost Basis: —</span>
     <span id="sb-gl">Unrealized G/L: —</span>
@@ -833,10 +935,9 @@ function renderAccounts(accounts) {
         </div>
       </div>
       <div class="acct-holdings">${holdBars}</div>
-      <button class="acct-strategy-btn" onclick="loadStrategy('${acct.account_id}', this)">
-        ✦ Get Account Strategy
+      <button class="acct-strategy-btn" id="strat-btn-${acct.account_id.replace(/[^a-z0-9]/gi,'-')}" onclick="handleStrategyBtn('${acct.account_id}', this)">
+        ${_getCached(acct.account_id) ? '✦ View Strategy' : '✦ Get Account Strategy'}
       </button>
-      <div class="strategy-output" id="strategy-${acct.account_id.replace(/[^a-z0-9]/gi,'-')}"></div>
     `;
     row.appendChild(card);
   });
@@ -918,20 +1019,31 @@ function populateTickerSelect(accounts) {
   if (prev && syms.includes(prev)) _selectedTicker = prev;
 }
 
+function confirmTickerInput() {
+  const val = document.getElementById('ticker-input').value.trim().toUpperCase();
+  if (!val) return;
+  setAgentTicker(val);
+  // Also open the detail panel for this ticker
+  selectStock(val);
+}
+
 function setAgentTicker(sym) {
   _selectedTicker = sym;
-  document.getElementById('agent-ticker-display').textContent = sym ? `Selected: ${sym}` : '';
+  const display = document.getElementById('agent-ticker-display');
+  if (sym) {
+    display.textContent = sym;
+    display.style.display = 'inline-block';
+    document.getElementById('ticker-input').value = sym;
+    document.getElementById('ticker-select').value = sym;
+  } else {
+    display.style.display = 'none';
+  }
 }
 
 /* ── Stock Selection ────────────────────────────────────────────── */
 function selectStock(sym) {
   _detailSym = sym;
-  _selectedTicker = sym;
-
-  // Update select
-  const sel = document.getElementById('ticker-select');
-  sel.value = sym;
-  document.getElementById('agent-ticker-display').textContent = `Selected: ${sym}`;
+  setAgentTicker(sym);
 
   // Highlight table rows
   document.querySelectorAll('#holdings-body tr').forEach(tr => {
@@ -1123,48 +1235,147 @@ function drawSparkline(data) {
 }
 
 /* ── Account Strategy ───────────────────────────────────────────── */
-async function loadStrategy(accountId, btn) {
-  const key = accountId.replace(/[^a-z0-9]/gi, '-');
-  const out = document.getElementById(`strategy-${key}`);
-  if (!out) return;
+let _strategyAccountId = '';
+let _strategyAbort = null;
 
-  if (out.textContent && out.classList.contains('visible')) {
-    out.classList.toggle('visible');
-    btn.textContent = out.classList.contains('visible') ? '▲ Hide Strategy' : '✦ Get Account Strategy';
-    return;
+const TODAY = new Date().toISOString().slice(0, 10);  // "2026-04-20"
+
+function _storageKey(accountId) { return `strategy_${accountId}_${TODAY}`; }
+
+function _getCached(accountId) {
+  try { return localStorage.getItem(_storageKey(accountId)) || null; } catch(e) { return null; }
+}
+
+function _setCached(accountId, text) {
+  try {
+    // Clear previous days' keys for this account
+    for (const k of Object.keys(localStorage)) {
+      if (k.startsWith(`strategy_${accountId}_`) && k !== _storageKey(accountId)) localStorage.removeItem(k);
+    }
+    localStorage.setItem(_storageKey(accountId), text);
+  } catch(e) {}
+}
+
+function handleStrategyBtn(accountId, btn) {
+  const cached = _getCached(accountId);
+  if (cached) {
+    openStrategyModal(accountId);
+    document.getElementById('modal-body').textContent = cached;
+    document.getElementById('modal-email-btn').style.display = 'inline-block';
+    document.getElementById('modal-export-btn').style.display = 'inline-block';
+  } else {
+    loadStrategy(accountId, btn);
   }
+}
+
+function openStrategyModal(accountId) {
+  _strategyAccountId = accountId;
+  document.getElementById('modal-title').textContent = accountId + ' — Strategy';
+  document.getElementById('modal-subtitle').textContent = new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  document.getElementById('strategy-modal').style.display = 'flex';
+  document.getElementById('strategy-minimized').style.display = 'none';
+  document.body.style.overflow = 'hidden';
+}
+
+function minimizeStrategyModal() {
+  document.getElementById('strategy-modal').style.display = 'none';
+  document.getElementById('strategy-minimized').style.display = 'block';
+  document.getElementById('minimized-label').textContent = _strategyAccountId.split('-')[0] + ' Strategy';
+  document.body.style.overflow = '';
+}
+
+function restoreStrategyModal() {
+  document.getElementById('strategy-modal').style.display = 'flex';
+  document.getElementById('strategy-minimized').style.display = 'none';
+  document.body.style.overflow = 'hidden';
+}
+
+function closeStrategyModal() {
+  if (_strategyAbort) { _strategyAbort.close(); _strategyAbort = null; }
+  document.getElementById('strategy-modal').style.display = 'none';
+  document.getElementById('strategy-minimized').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+function exportStrategy() {
+  const title    = document.getElementById('modal-title').textContent;
+  const subtitle = document.getElementById('modal-subtitle').textContent;
+  const text     = document.getElementById('modal-body').textContent;
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html><html><head>
+    <meta charset="UTF-8"><title>${title}</title>
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { font-family:'Georgia',serif; font-size:13px; line-height:1.75;
+             color:#1a1a1a; background:#fff; padding:48px 56px; max-width:800px; margin:0 auto; }
+      h1 { font-size:1.4rem; font-weight:700; margin-bottom:4px; }
+      .meta { font-size:.8rem; color:#666; margin-bottom:28px; padding-bottom:12px; border-bottom:2px solid #111; }
+      pre { white-space:pre-wrap; word-wrap:break-word; font-family:'Georgia',serif; font-size:13px; line-height:1.75; }
+      .disclaimer { margin-top:32px; padding-top:12px; border-top:1px solid #ccc; font-size:.75rem; color:#888; font-style:italic; }
+      .no-print { margin-top:24px; text-align:center; }
+      @media print { .no-print { display:none; } }
+    </style>
+  </head><body>
+    <h1>${title}</h1>
+    <div class="meta">${subtitle}</div>
+    <pre>${text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
+    <div class="disclaimer">For educational and research purposes only. Not financial advice.</div>
+    <div class="no-print">
+      <button onclick="window.print()" style="background:#111;color:#fff;border:none;padding:10px 28px;
+        border-radius:6px;font-size:14px;cursor:pointer;font-weight:600;">Save as PDF (Ctrl+P)</button>
+    </div>
+  </body></html>`);
+  win.document.close();
+  setTimeout(() => win.print(), 400);
+}
+
+function emailStrategy() {
+  const title = document.getElementById('modal-title').textContent;
+  const text  = document.getElementById('modal-body').textContent;
+  const date  = document.getElementById('modal-subtitle').textContent;
+  const body  = encodeURIComponent(`${title}\n${date}\n\n${text}\n\n---\nFor educational purposes only. Not financial advice.`);
+  const subject = encodeURIComponent(title);
+  window.location.href = `mailto:milad@3mdventures.com?subject=${subject}&body=${body}`;
+}
+
+async function loadStrategy(accountId, btn) {
+  openStrategyModal(accountId);
 
   btn.disabled = true;
   btn.classList.add('loading');
-  btn.textContent = '⏳ Generating strategy…';
-  out.textContent = '';
-  out.classList.add('visible');
+  btn.textContent = '⏳ Generating…';
 
-  const encodedId = encodeURIComponent(accountId);
-  const es = new EventSource(`/api/guidance/${encodedId}`);
+  const body       = document.getElementById('modal-body');
+  const encodedId  = encodeURIComponent(accountId);
+  const es         = new EventSource(`/api/guidance/${encodedId}`);
+  _strategyAbort   = es;
 
   es.onmessage = e => {
     if (e.data === '[DONE]') {
       es.close();
+      _strategyAbort = null;
       btn.disabled = false;
       btn.classList.remove('loading');
-      btn.textContent = '▲ Hide Strategy';
+      btn.textContent = '✦ View Strategy';
+      _setCached(accountId, body.textContent);
+      document.getElementById('modal-email-btn').style.display = 'inline-block';
+      document.getElementById('modal-export-btn').style.display = 'inline-block';
       return;
     }
     try {
       const { text, error } = JSON.parse(e.data);
-      if (error) { out.textContent += `\nError: ${error}`; es.close(); return; }
-      if (text) out.textContent += text;
-      out.scrollTop = out.scrollHeight;
-    } catch(err) { /* ignore parse errors */ }
+      if (error) { body.textContent += `\nError: ${error}`; es.close(); return; }
+      if (text) { body.textContent += text; body.scrollTop = body.scrollHeight; }
+    } catch(err) { /* skip */ }
   };
 
   es.onerror = () => {
     es.close();
+    _strategyAbort = null;
     btn.disabled = false;
     btn.classList.remove('loading');
     btn.textContent = '✦ Get Account Strategy';
-    out.textContent = out.textContent || 'Error fetching strategy. Ensure ANTHROPIC_API_KEY is set.';
+    if (!body.textContent) body.textContent = 'Error. Make sure ANTHROPIC_API_KEY is set.';
   };
 }
 
@@ -1213,6 +1424,7 @@ async function runAgent(agentType) {
       _agentAbort = null;
       title.textContent = `${agentIcon(agentType)} ${agentType.charAt(0).toUpperCase()+agentType.slice(1)} Analysis — ${sym}`;
       document.querySelectorAll('.agent-btn').forEach(b => b.disabled = false);
+      document.getElementById('agent-download-btn').style.display = 'inline-block';
       return;
     }
     try {
@@ -1246,7 +1458,50 @@ async function runAgent(agentType) {
 function closeAgentOutput() {
   if (_agentAbort) { _agentAbort.close(); _agentAbort = null; }
   document.getElementById('agent-output-wrap').classList.remove('visible');
+  document.getElementById('agent-download-btn').style.display = 'none';
   document.querySelectorAll('.agent-btn').forEach(b => b.disabled = false);
+}
+
+function downloadAgentOutput() {
+  const title  = document.getElementById('agent-output-title').textContent.trim();
+  const text   = document.getElementById('agent-output').textContent;
+  const ticker = _selectedTicker || 'STOCK';
+  const date   = new Date().toLocaleDateString('en-US', {year:'numeric',month:'short',day:'numeric'});
+
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html><html><head>
+    <meta charset="UTF-8">
+    <title>${title}</title>
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { font-family: 'Georgia', serif; font-size: 13px; line-height: 1.7;
+             color: #1a1a1a; background: #fff; padding: 48px 56px; max-width: 800px; margin: 0 auto; }
+      h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 4px; color: #111; }
+      .meta { font-size: .8rem; color: #666; margin-bottom: 28px; padding-bottom: 12px;
+              border-bottom: 2px solid #111; }
+      pre { white-space: pre-wrap; word-wrap: break-word; font-family: 'Georgia', serif;
+            font-size: 13px; line-height: 1.75; }
+      .disclaimer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #ccc;
+                    font-size: .75rem; color: #888; font-style: italic; }
+      @media print {
+        body { padding: 0; }
+        .no-print { display: none; }
+      }
+    </style>
+  </head><body>
+    <h1>${title}</h1>
+    <div class="meta">Generated ${date} &nbsp;|&nbsp; AI Trading Dashboard &nbsp;|&nbsp; ${ticker}</div>
+    <pre>${text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
+    <div class="disclaimer">For educational and research purposes only. Not financial advice. Always do your own due diligence.</div>
+    <div class="no-print" style="margin-top:24px;text-align:center;">
+      <button onclick="window.print()" style="background:#111;color:#fff;border:none;padding:10px 28px;
+        border-radius:6px;font-size:14px;cursor:pointer;font-weight:600;">
+        Save as PDF (Ctrl+P)
+      </button>
+    </div>
+  </body></html>`);
+  win.document.close();
+  setTimeout(() => win.print(), 400);
 }
 
 /* ── Auto-refresh every 60 seconds ─────────────────────────────── */
