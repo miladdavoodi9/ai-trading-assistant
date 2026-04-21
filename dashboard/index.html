@@ -137,6 +137,7 @@ a { color: var(--accent2); text-decoration: none; }
   flex-direction: column;
   gap: 12px;
   transition: border-color .2s;
+  max-height: 420px;
 }
 .acct-card:hover { border-color: var(--border2); }
 .acct-card .acct-header {
@@ -170,6 +171,9 @@ a { color: var(--accent2); text-decoration: none; }
   display: flex;
   flex-direction: column;
   gap: 4px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 .holding-bar-row {
   display: flex;
@@ -431,18 +435,23 @@ td.right { text-align: right; }
 /* ── Stock Detail Panel ───────────────────────────────────────── */
 #detail-panel {
   width: 0;
+  min-width: 0;
   flex-shrink: 0;
   background: var(--surface);
   border-left: 0px solid var(--border);
   overflow: hidden;
-  transition: width .3s cubic-bezier(.4,0,.2,1), border-left-width .3s;
+  visibility: hidden;
+  transition: width .3s cubic-bezier(.4,0,.2,1), border-left-width .3s, visibility 0s .3s;
   display: flex;
   flex-direction: column;
 }
 #detail-panel.open {
   width: 380px;
+  min-width: 380px;
   border-left-width: 1px;
   overflow-y: auto;
+  visibility: visible;
+  transition: width .3s cubic-bezier(.4,0,.2,1), border-left-width .3s, visibility 0s 0s;
 }
 #detail-close {
   position: sticky;
