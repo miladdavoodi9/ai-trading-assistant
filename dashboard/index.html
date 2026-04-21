@@ -1357,7 +1357,7 @@ function emailStrategy() {
   const date  = document.getElementById('modal-subtitle').textContent;
   const body  = encodeURIComponent(`${title}\n${date}\n\n${text}\n\n---\nFor educational purposes only. Not financial advice.`);
   const subject = encodeURIComponent(title);
-  window.location.href = `mailto:milad@3mdventures.com?subject=${subject}&body=${body}`;
+  window.location.href = `mailto:?subject=${subject}&body=${body}`;
 }
 
 async function loadStrategy(accountId, btn) {
