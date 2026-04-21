@@ -83,7 +83,7 @@ A locally-hosted web dashboard built with Python (FastAPI) and a browser fronten
 | F8 | Per-account AI strategy with tax-aware context, new opportunity recommendations, and position sizing guidance |
 | F9 | Strategy modal with minimize, export PDF, and email actions; cached in localStorage per day |
 | F10 | `.env` file support for `ANTHROPIC_API_KEY`; key never committed to version control |
-| F11 | One-click launchers: `Start Dashboard.command` (Mac), `Start Dashboard.bat` (Windows) — both auto-parse CSVs before starting |
+| F11 | One-click launchers: `Launch Application.command` (Mac), `Launch Application.bat` (Windows) — both auto-parse CSVs before starting |
 
 ### Non-Functional Requirements
 
@@ -199,53 +199,77 @@ Results stream live to the page as they generate. When done, you can **export to
 ### What You Need
 - Mac or Windows PC
 - [Python 3.8+](https://www.python.org/)
-- An [Anthropic API key](https://console.anthropic.com) (for AI agents)
-- A Schwab brokerage account
+- An [Anthropic API key](https://console.anthropic.com) — for the AI agents
+- A brokerage account at Schwab, E-Trade, or Morgan Stanley
 
-### Install
+### 1 — Clone & Install
 
 ```bash
-# 1. Clone the repo
 git clone https://github.com/miladdavoodi9/ai-trading-assistant.git
 cd ai-trading-assistant
-
-# 2. Install dependencies
 pip install fastapi uvicorn anthropic requests
-
-# 3. Add your Anthropic API key
-# Edit the .env file and paste your key:
-# ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-### Load Your Portfolio
+### 2 — Add Your Anthropic API Key
 
-1. Log in to Schwab → **Accounts** → **Positions**
-2. Click the **Export** icon (top-right)
-3. Save the CSV and drop it into `portfolio/input/`
-4. Run the parser:
+Open the `.env` file in the project root and paste your key:
+
+```
+ANTHROPIC_API_KEY=sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+Get your key at [console.anthropic.com](https://console.anthropic.com). Without it, the dashboard loads and shows live prices, but the AI agents won't run.
+
+> Your key is stored only on your machine and is gitignored — it will never be committed to GitHub.
+
+### 3 — Export Your Portfolio CSV
+
+The dashboard reads a positions CSV you export from your brokerage. No brokerage login or API — just a file you download and drop in a folder.
+
+**Schwab**
+1. Log in → **Accounts** tab → **Positions**
+2. Click the **Export** icon (top-right, looks like a page with a down-arrow)
+3. Save the file → drop it into `portfolio/input/`
+4. Repeat for each account (Individual, IRA, 401k, etc.)
+
+**E-Trade**
+1. Log in → **Portfolio** tab
+2. Click the **download icon** (top-right of the positions table)
+3. Select **CSV** format → save the file
+4. Drop it into `portfolio/input/`
+
+**Morgan Stanley**
+1. Log in → **Accounts** → **Portfolio** → **Gain/Loss** tab
+2. Click **Download** → open the file in Excel
+3. **File → Save As → CSV (Comma delimited)**
+4. Drop the CSV into `portfolio/input/`
+
+You can mix files from different brokerages — drop them all in `portfolio/input/` and the parser handles each automatically.
+
+### 4 — Parse Your Portfolio
 
 ```bash
 python parse_schwab.py
 ```
 
-Do this for each of your Schwab accounts. The parser automatically handles multiple accounts.
+The parser auto-detects the brokerage format, merges all accounts into one file, and prints a summary. Do this whenever you make trades.
 
-### Launch the Dashboard
+### 5 — Launch the Dashboard
 
-Double-click **`Start Dashboard.command`** (Mac) or **`Start Dashboard.bat`** (Windows) — the server starts and your browser opens automatically.
+Double-click **`Launch Application.command`** (Mac) or **`Launch Application.bat`** (Windows).
 
 Or from a terminal:
 ```bash
 python dashboard.py
 ```
 
-Then go to **http://localhost:8765**
+Then open **http://localhost:8765** in your browser.
 
 ---
 
 ## Updating Your Portfolio
 
-Whenever you make a trade, export a fresh CSV from Schwab and run `python parse_schwab.py` again. The dashboard will pick up the new positions on the next refresh. Day-to-day price changes update automatically — no action needed.
+Whenever you make a trade, export a fresh CSV from your brokerage, drop it in `portfolio/input/`, and run `python parse_schwab.py` again. Day-to-day price changes update automatically every 60 seconds — no action needed.
 
 ---
 
