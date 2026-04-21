@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-parse_schwab.py  --  Schwab / E-Trade / Morgan Stanley CSV → portfolio.json
+parse_schwab.py  --  Schwab / E-Trade / Morgan Stanley -> portfolio.json
 
 Supported exports:
-  Schwab          Accounts → Positions → Export (CSV)
-  E-Trade         Portfolio → (download icon) → CSV
-  Morgan Stanley  Portfolio → Gain/Loss → Download (save XLSX as CSV first)
+  Schwab          Accounts -> Positions -> Export (CSV)
+  E-Trade         Portfolio -> download icon -> CSV
+  Morgan Stanley  Portfolio -> Holdings -> Download (XLSX — no conversion needed)
 
-Drop any CSV files into  portfolio/input/  then run:
+Drop any CSV or XLSX files into  portfolio/input/  then run:
     python parse_schwab.py
 """
 
@@ -17,6 +17,12 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
+
+try:
+    import xlrd
+    _XLRD_OK = True
+except ImportError:
+    _XLRD_OK = False
 
 BASE_DIR    = Path(__file__).parent
 INPUT_DIR   = BASE_DIR / "portfolio" / "input"
@@ -37,12 +43,14 @@ COLUMN_MAP = {
     # ── Price ──────────────────────────────────────────────────
     "price":                    "price",
     "last price":               "price",
+    "last ($)":                 "price",       # Morgan Stanley XLSX
     "market price":             "price",
     "current price":            "price",
     "closing price":            "price",
 
     # ── Market Value ───────────────────────────────────────────
     "market value":             "market_value",
+    "market value ($)":         "market_value",  # Morgan Stanley XLSX
     "mkt val (market value)":   "market_value",
     "mkt val":                  "market_value",
     "value":                    "market_value",
@@ -52,8 +60,10 @@ COLUMN_MAP = {
     # ── Cost Basis (total) ─────────────────────────────────────
     "cost basis":               "cost_basis",
     "total cost":               "cost_basis",
+    "total cost ($)":           "cost_basis",    # Morgan Stanley XLSX
     "cost basis total":         "cost_basis",
     "adjusted cost basis":      "cost_basis",
+    "adjusted cost ($)":        "cost_basis",    # Morgan Stanley XLSX fallback
 
     # ── Cost Per Share (E-Trade uses this; derive total from qty)
     "cost/share":               "cost_per_share",
@@ -64,20 +74,22 @@ COLUMN_MAP = {
     "avg cost/share":           "cost_per_share",
 
     # ── Gain / Loss $ ──────────────────────────────────────────
-    "gain/loss $":              "gain_loss",
-    "gain $ (gain/loss $)":     "gain_loss",
-    "gain $":                   "gain_loss",
-    "total gain/loss dollar":   "gain_loss",
-    "total gain/loss $":        "gain_loss",
-    "unrealized gain/loss":     "gain_loss",
-    "unrealized gain / loss":   "gain_loss",
-    "unrealized p&l":           "gain_loss",
-    "gain/loss":                "gain_loss",
+    "gain/loss $":                  "gain_loss",
+    "gain $ (gain/loss $)":         "gain_loss",
+    "gain $":                       "gain_loss",
+    "total gain/loss dollar":       "gain_loss",
+    "total gain/loss $":            "gain_loss",
+    "unrealized gain/loss":         "gain_loss",
+    "unrealized gain / loss":       "gain_loss",
+    "unrealized gain/loss ($)":     "gain_loss",    # Morgan Stanley XLSX
+    "unrealized p&l":               "gain_loss",
+    "gain/loss":                    "gain_loss",
 
     # ── Gain / Loss % ──────────────────────────────────────────
-    "gain/loss %":              "gain_loss_pct",
-    "gain % (gain/loss %)":     "gain_loss_pct",
-    "gain %":                   "gain_loss_pct",
+    "gain/loss %":                  "gain_loss_pct",
+    "gain % (gain/loss %)":         "gain_loss_pct",
+    "gain %":                       "gain_loss_pct",
+    "unrealized gain/loss (%)":     "gain_loss_pct",  # Morgan Stanley XLSX
     "total gain/loss percent":  "gain_loss_pct",
     "total gain/loss %":        "gain_loss_pct",
     "% gain/loss":              "gain_loss_pct",
@@ -393,6 +405,122 @@ def parse_flat_csv(filepath, content: str, brokerage: str) -> list:
     return accounts
 
 
+# ── Morgan Stanley XLSX parser ───────────────────────────────────────────────
+
+# Product types to treat as cash rather than positions
+_MS_CASH_TYPES = {"cash, mmf and bdp", "cash"}
+# Institutions to skip entirely (non-brokerage linked accounts)
+_MS_SKIP_INSTITUTIONS = {"chase", "bank of america", "wells fargo", "citibank"}
+
+def parse_ms_xlsx(filepath) -> list:
+    """
+    Parse Morgan Stanley's native XLSX export (Holdings view).
+    Groups rows by 'Account Number' column; skips linked bank accounts.
+    """
+    if not _XLRD_OK:
+        print("  WARNING: xlrd not installed — cannot read XLSX. Run: pip install xlrd==1.2.0")
+        return []
+
+    wb = xlrd.open_workbook(str(filepath))
+    ws = wb.sheet_by_index(0)
+
+    # Find the header row (contains 'Account Number' and 'Symbol')
+    header_row_idx = None
+    for i in range(ws.nrows):
+        row = [str(ws.cell_value(i, j)).strip() for j in range(ws.ncols)]
+        if "Account Number" in row and "Symbol" in row:
+            header_row_idx = i
+            break
+
+    if header_row_idx is None:
+        print(f"  WARNING: could not find header row in {filepath.name}")
+        return []
+
+    headers = [normalize_header(str(ws.cell_value(header_row_idx, j)).strip())
+               for j in range(ws.ncols)]
+
+    # Also keep raw headers for account number and institution columns
+    raw_headers = [str(ws.cell_value(header_row_idx, j)).strip().lower()
+                   for j in range(ws.ncols)]
+    acct_col  = raw_headers.index("account number") if "account number" in raw_headers else None
+    inst_col  = raw_headers.index("institution")    if "institution"    in raw_headers else None
+    ptype_col = raw_headers.index("product type")   if "product type"   in raw_headers else None
+
+    accounts_map = {}
+
+    for i in range(header_row_idx + 1, ws.nrows):
+        row = [str(ws.cell_value(i, j)).strip() for j in range(ws.ncols)]
+        if not any(row):
+            continue
+
+        # Skip footnotes / disclaimer rows
+        # Valid account IDs are short and always contain digits (e.g. "AAA - 1103")
+        first = row[0] if row else ""
+        if len(first) > 80 or not re.search(r'\d', first):
+            continue
+        if first.lower() in ("total", ""):
+            continue
+
+        # Skip linked bank accounts (Chase, etc.)
+        institution = row[inst_col].strip() if inst_col is not None else ""
+        if any(bank in institution.lower() for bank in _MS_SKIP_INSTITUTIONS):
+            continue
+
+        # Determine account key
+        raw_acct = row[acct_col].strip() if acct_col is not None else "Morgan Stanley"
+        # raw_acct looks like "AAA - 1103" or "Stock Plan & Linked Brokerage - 3329"
+        # Normalize to a clean label + last-4 suffix
+        num_m = re.search(r'(\d{4,})\s*$', raw_acct)
+        suffix    = f"-{num_m.group(1)[-4:]}" if num_m else ""
+        base_name = re.sub(r'\s*[-–]\s*\d+\s*$', '', raw_acct).strip()
+        # Shorten verbose names
+        if "stock plan" in base_name.lower() or "linked brokerage" in base_name.lower():
+            base_name = "Stock Plan"
+        elif not base_name:
+            base_name = "Morgan Stanley"
+        acct_key = f"{base_name}{suffix}"
+
+        if acct_key not in accounts_map:
+            accounts_map[acct_key] = {
+                "account_id": acct_key,
+                "positions": [], "cash": 0.0, "total_equity": 0.0,
+            }
+        current = accounts_map[acct_key]
+
+        # Build row dict using normalized headers
+        row += [""] * max(0, len(headers) - len(row))
+        d = {headers[j]: row[j] for j in range(len(headers))}
+
+        sym = d.get("symbol", "").strip().upper()
+        product_type = row[ptype_col].strip().lower() if ptype_col is not None else ""
+
+        # Cash / BDP rows
+        if not sym or sym == "-" or product_type in _MS_CASH_TYPES:
+            val = clean_num(d.get("market_value", ""))
+            if val is not None:
+                current["cash"] += val
+            continue
+
+        # Skip non-standard holdings (stock plan unvested, etc.)
+        if product_type == "other holdings":
+            continue
+
+        pos = _build_position(d, sym)
+        if pos["shares"] is not None or pos["market_value"] is not None:
+            current["positions"].append(pos)
+
+    accounts = list(accounts_map.values())
+
+    for acct in accounts:
+        if acct["total_equity"] == 0.0:
+            acct["total_equity"] = round(
+                sum(p.get("market_value") or 0 for p in acct["positions"])
+                + acct["cash"], 2
+            )
+
+    return accounts
+
+
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 
 def parse_csv(filepath) -> tuple:
@@ -523,28 +651,36 @@ def main():
     OUTPUT_JSON.parent.mkdir(parents=True, exist_ok=True)
 
     seen, unique = set(), []
-    for f in list(INPUT_DIR.glob("*.csv")) + list(INPUT_DIR.glob("*.CSV")):
-        key = f.resolve()
-        if key not in seen:
-            seen.add(key)
-            unique.append(f)
-    csv_files = sorted(unique, key=lambda x: x.stat().st_mtime, reverse=True)
+    patterns = ["*.csv", "*.CSV", "*.xlsx", "*.XLSX", "*.xls", "*.XLS"]
+    for pat in patterns:
+        for f in INPUT_DIR.glob(pat):
+            key = f.resolve()
+            if key not in seen:
+                seen.add(key)
+                unique.append(f)
+    all_files = sorted(unique, key=lambda x: x.stat().st_mtime, reverse=True)
 
-    if not csv_files:
-        print(f"\nNo CSV files found in: {INPUT_DIR}")
+    if not all_files:
+        print(f"\nNo portfolio files found in: {INPUT_DIR}")
         print("\nExport steps:")
-        print("  Schwab:         Accounts → Positions → Export icon")
-        print("  E-Trade:        Portfolio → download icon → CSV")
-        print("  Morgan Stanley: Portfolio → Gain/Loss → Download → save as CSV")
+        print("  Schwab:         Accounts -> Positions -> Export icon (CSV)")
+        print("  E-Trade:        Portfolio -> download icon -> CSV")
+        print("  Morgan Stanley: Portfolio -> Holdings -> Download (XLSX, drop as-is)")
         print(f"\nDrop the file(s) into: {INPUT_DIR}")
         print("Then run this script again.\n")
         sys.exit(1)
 
     accounts  = []
     brokers   = []
-    for csv_file in csv_files:
-        result, broker = parse_csv(csv_file)
-        print(f"Parsing ({broker}): {csv_file.name}  →  {len(result)} account(s)")
+    for portfolio_file in all_files:
+        ext = portfolio_file.suffix.lower()
+        if ext in (".xlsx", ".xls"):
+            result = parse_ms_xlsx(portfolio_file)
+            broker = "Morgan Stanley"
+            print(f"Parsing (Morgan Stanley XLSX): {portfolio_file.name}  ->  {len(result)} account(s)")
+        else:
+            result, broker = parse_csv(portfolio_file)
+            print(f"Parsing ({broker}): {portfolio_file.name}  ->  {len(result)} account(s)")
         accounts.extend(result)
         brokers.append(broker)
 
@@ -557,8 +693,8 @@ def main():
 
     data = {
         "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "source":       f"{source} — {len(csv_files)} file(s)",
-        "source_files": [f.name for f in csv_files],
+        "source":       f"{source} — {len(all_files)} file(s)",
+        "source_files": [f.name for f in all_files],
         "accounts":     accounts,
         "summary":      summary,
     }
@@ -580,8 +716,8 @@ def main():
     if s["profit_taking_candidates"]:
         print(f"  Profit Candidates: {', '.join(s['profit_taking_candidates'])}")
     print(f"{'='*54}")
-    print(f"\n  Saved → {OUTPUT_JSON.name}")
-    print(f"  Saved → {OUTPUT_MD.name}\n")
+    print(f"\n  Saved -> {OUTPUT_JSON.name}")
+    print(f"  Saved -> {OUTPUT_MD.name}\n")
 
 
 if __name__ == "__main__":

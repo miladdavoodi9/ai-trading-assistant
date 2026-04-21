@@ -145,7 +145,7 @@ Access the dashboard from your MacBook, phone, or any device — even when trave
 
 ## What This Is
 
-A private trading research dashboard that runs entirely on your own computer. It reads your real Schwab portfolio, tracks your positions with live prices, and lets you run AI-powered analysis on any stock — all through a clean browser-based interface.
+A private trading research dashboard that runs entirely on your own computer. It reads your real brokerage portfolio from **Schwab, E-Trade, or Morgan Stanley**, tracks your positions with live prices, and lets you run AI-powered analysis on any stock — all through a clean browser-based interface.
 
 This is a **research tool**. It does not execute trades, manage money, or connect to your brokerage. You stay in control.
 
@@ -200,7 +200,7 @@ Results stream live to the page as they generate. When done, you can **export to
 - Mac or Windows PC
 - [Python 3.8+](https://www.python.org/)
 - An [Anthropic API key](https://console.anthropic.com) — for the AI agents
-- A brokerage account at Schwab, E-Trade, or Morgan Stanley
+- A brokerage account at **Schwab**, **E-Trade**, or **Morgan Stanley** (mix and match — all three work simultaneously)
 
 ### 1 — Clone & Install
 
@@ -244,7 +244,7 @@ The dashboard reads a positions CSV you export from your brokerage. No brokerage
 3. **File → Save As → CSV (Comma delimited)**
 4. Drop the CSV into `portfolio/input/`
 
-You can mix files from different brokerages — drop them all in `portfolio/input/` and the parser handles each automatically.
+You can mix files from different brokerages — drop them all into `portfolio/input/` and the parser auto-detects each format and merges them into one view.
 
 ### 4 — Parse Your Portfolio
 
@@ -269,15 +269,15 @@ Then open **http://localhost:8765** in your browser.
 
 ## Updating Your Portfolio
 
-Whenever you make a trade, export a fresh CSV from your brokerage, drop it in `portfolio/input/`, and run `python parse_schwab.py` again. Day-to-day price changes update automatically every 60 seconds — no action needed.
+Whenever you make a trade, export a fresh file from your brokerage (CSV for Schwab/E-Trade, XLSX for Morgan Stanley), drop it in `portfolio/input/` replacing the old one, and run `python parse_schwab.py` again. Day-to-day price changes update automatically every 60 seconds — no action needed.
 
 ---
 
 ## Privacy & Security
 
 - Your portfolio data never leaves your machine
-- Schwab CSV exports are gitignored and stay local
-- No direct connection to Schwab or any brokerage
+- Brokerage exports (CSV/XLSX) are gitignored and stay local
+- No direct connection to Schwab, E-Trade, Morgan Stanley, or any brokerage
 - The only external calls are live price lookups (Yahoo Finance) and AI analysis (Anthropic API)
 
 ---
