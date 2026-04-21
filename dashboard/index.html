@@ -644,7 +644,7 @@ td.right { text-align: right; }
                 <th class="right">Unreal G/L</th>
                 <th class="right">G/L %</th>
                 <th class="right">Day Chg</th>
-                <th class="right">% Acct</th>
+                <th class="right">% Portfolio</th>
               </tr>
             </thead>
             <tbody id="holdings-body">
@@ -821,6 +821,7 @@ td.right { text-align: right; }
 <script>
 /* ── State ──────────────────────────────────────────────────────── */
 let _portfolio = null;
+let _portfolioTotal = 0;
 let _selectedTicker = '';
 let _agentAbort = null;
 let _detailSym = null;
@@ -960,6 +961,7 @@ function renderHoldings(accounts) {
   _allRows = rows;
 
   const totalMV = rows.reduce((s,r) => s + (r.live_value||0), 0);
+  _portfolioTotal = totalMV;
   document.getElementById('holdings-sub').textContent =
     `${rows.length} positions across ${accounts.length} accounts — ${fmt(totalMV)} invested`;
 
@@ -994,7 +996,7 @@ function renderHoldingsRows(rows) {
       <td class="right">${glChip(gl)}</td>
       <td class="right">${glChip(glp, true)}</td>
       <td class="right ${glClass(dayC)}">${dayC != null ? (dayC>=0?'+':'')+fmt(dayC) : '—'}</td>
-      <td class="right" style="color:var(--muted);">${p.pct_of_account != null ? p.pct_of_account.toFixed(1)+'%' : '—'}</td>
+      <td class="right" style="color:var(--muted);">${_portfolioTotal > 0 && p.live_value != null ? (p.live_value / _portfolioTotal * 100).toFixed(1)+'%' : '—'}</td>
     </tr>`;
   }).join('');
 }
