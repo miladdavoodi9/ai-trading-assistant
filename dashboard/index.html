@@ -430,18 +430,19 @@ td.right { text-align: right; }
 
 /* ── Stock Detail Panel ───────────────────────────────────────── */
 #detail-panel {
-  width: 380px;
+  width: 0;
   flex-shrink: 0;
   background: var(--surface);
-  border-left: 1px solid var(--border);
-  overflow-y: auto;
-  transform: translateX(100%);
-  transition: transform .3s cubic-bezier(.4,0,.2,1);
+  border-left: 0px solid var(--border);
+  overflow: hidden;
+  transition: width .3s cubic-bezier(.4,0,.2,1), border-left-width .3s;
   display: flex;
   flex-direction: column;
 }
 #detail-panel.open {
-  transform: translateX(0);
+  width: 380px;
+  border-left-width: 1px;
+  overflow-y: auto;
 }
 #detail-close {
   position: sticky;
@@ -1075,6 +1076,11 @@ async function loadDetail(sym) {
   }
 }
 
+function kvRow(label, value) {
+  if (value == null || value === '—') return '';
+  return `<div class="kv-row"><span class="k">${label}</span><span class="v">${value}</span></div>`;
+}
+
 function renderDetail(d) {
   const body = document.getElementById('detail-body');
   const sym  = d.symbol;
@@ -1122,6 +1128,32 @@ function renderDetail(d) {
     ? d.news.map(n => `<div class="news-item">${n}</div>`).join('')
     : '<div class="news-item" style="color:var(--muted);">No recent news</div>';
 
+  const valuationRows = [
+    kvRow('P/E (Trailing)', d.pe_ratio != null ? d.pe_ratio.toFixed(1) : null),
+    kvRow('P/E (Forward)', d.fwd_pe != null ? d.fwd_pe.toFixed(1) : null),
+    kvRow('P/S Ratio', d.ps_ratio != null ? d.ps_ratio.toFixed(1) : null),
+    kvRow('Market Cap', d.market_cap ? fmtB(d.market_cap) : null),
+  ].join('');
+
+  const rangeRows = [
+    kvRow('52W High', d.week52_high ? fmt(d.week52_high) : null),
+    kvRow('52W Low', d.week52_low ? fmt(d.week52_low) : null),
+    kvRow('Avg Volume', d.avg_volume ? fmtNum(d.avg_volume) : null),
+    kvRow('Beta', d.beta != null ? d.beta.toFixed(2) : null),
+  ].join('');
+
+  const analystRows = [
+    rating ? kvRow('Consensus', ratingBadge) : '',
+    kvRow('Price Target', d.analyst_target ? fmt(d.analyst_target) : null),
+    curPrice && d.analyst_target
+      ? `<div class="kv-row"><span class="k">Upside</span><span class="v ${glClass(d.analyst_target - curPrice)}">${fmtPct((d.analyst_target/curPrice - 1)*100, true)}</span></div>`
+      : '',
+  ].join('');
+
+  const detailSection = (title, rows) => rows
+    ? `<div class="detail-section"><div class="detail-section-title">${title}</div>${rows}</div>`
+    : '';
+
   body.innerHTML = `
     <div class="detail-price-row">
       <div id="detail-price">${fmt(curPrice)}</div>
@@ -1134,30 +1166,9 @@ function renderDetail(d) {
       <canvas id="sparkline-canvas"></canvas>
     </div>` : ''}
 
-    <div class="detail-section">
-      <div class="detail-section-title">Valuation</div>
-      <div class="kv-row"><span class="k">P/E (Trailing)</span><span class="v">${d.pe_ratio?.toFixed(1) || '—'}</span></div>
-      <div class="kv-row"><span class="k">P/E (Forward)</span><span class="v">${d.fwd_pe?.toFixed(1) || '—'}</span></div>
-      <div class="kv-row"><span class="k">P/S Ratio</span><span class="v">${d.ps_ratio?.toFixed(1) || '—'}</span></div>
-      <div class="kv-row"><span class="k">Market Cap</span><span class="v">${fmtB(d.market_cap)}</span></div>
-    </div>
-
-    <div class="detail-section">
-      <div class="detail-section-title">Price Range</div>
-      <div class="kv-row"><span class="k">52W High</span><span class="v">${fmt(d.week52_high)}</span></div>
-      <div class="kv-row"><span class="k">52W Low</span><span class="v">${fmt(d.week52_low)}</span></div>
-      <div class="kv-row"><span class="k">Avg Volume</span><span class="v">${fmtNum(d.avg_volume)}</span></div>
-      <div class="kv-row"><span class="k">Beta</span><span class="v">${d.beta?.toFixed(2) || '—'}</span></div>
-    </div>
-
-    <div class="detail-section">
-      <div class="detail-section-title">Analyst</div>
-      <div class="kv-row"><span class="k">Consensus</span><span class="v">${ratingBadge}</span></div>
-      <div class="kv-row"><span class="k">Price Target</span><span class="v">${fmt(d.analyst_target)}</span></div>
-      <div class="kv-row"><span class="k">Upside</span><span class="v ${curPrice && d.analyst_target ? glClass(d.analyst_target - curPrice) : ''}">${
-        curPrice && d.analyst_target ? fmtPct((d.analyst_target/curPrice - 1)*100, true) : '—'
-      }</span></div>
-    </div>
+    ${detailSection('Valuation', valuationRows)}
+    ${detailSection('Price Range', rangeRows)}
+    ${detailSection('Analyst', analystRows)}
 
     <div class="detail-section">
       <div class="detail-section-title">My Holdings</div>

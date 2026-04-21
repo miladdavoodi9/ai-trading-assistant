@@ -454,7 +454,8 @@ Provide prioritized, actionable guidance to maximize net worth and income for th
 3. CASH — how to deploy the available cash (${cash})
 4. INCOME — covered call or dividend opportunities
 5. RISK — concentration issues, correlation risks
-6. TOP 3 ACTIONS — the single most important moves ranked
+6. NEW OPPORTUNITIES — 3 to 5 specific stocks, ETFs, sectors, or markets NOT currently held that are worth researching right now. For each, explain the thesis in 1-2 sentences, suggest a position size as a dollar amount or percentage of this account, and note any timing or entry considerations.
+7. TOP 3 ACTIONS — the single most important moves ranked (can include new opportunities)
 
 Be direct. Use specific ticker names, prices, and percentages.
 DISCLAIMER: Educational purposes only. Not financial advice.""",
