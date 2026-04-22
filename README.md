@@ -2,8 +2,6 @@
 
 > A personal, self-hosted investment dashboard that knows your actual portfolio and helps you make smarter decisions — powered by AI.
 
-![Dashboard Preview](docs/dashboard-preview.png)
-
 ---
 
 ## Business Requirements Document (BRD)
