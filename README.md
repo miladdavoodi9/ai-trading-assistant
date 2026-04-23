@@ -145,7 +145,7 @@ Access the dashboard from your MacBook, phone, or any device — even when trave
 
 ## What This Is
 
-A private trading research dashboard that runs entirely on your own computer. It reads your real brokerage portfolio from **Schwab, E-Trade, or Morgan Stanley**, tracks your positions with live prices, and lets you run AI-powered analysis on any stock — all through a clean browser-based interface.
+A private trading research dashboard that runs entirely on your own computer. It reads your real brokerage portfolio from **Schwab, E-Trade, Fidelity, or Morgan Stanley**, tracks your positions with live prices, and lets you run AI-powered analysis on any stock — all through a clean browser-based interface.
 
 This is a **research tool**. It does not execute trades, manage money, or connect to your brokerage. You stay in control.
 
@@ -200,7 +200,7 @@ Results stream live to the page as they generate. When done, you can **export to
 - Mac or Windows PC
 - [Python 3.8+](https://www.python.org/)
 - An [Anthropic API key](https://console.anthropic.com) — for the AI agents
-- A brokerage account at **Schwab**, **E-Trade**, or **Morgan Stanley** (mix and match — all three work simultaneously)
+- A brokerage account at **Schwab**, **E-Trade**, **Fidelity**, or **Morgan Stanley** (mix and match — all four work simultaneously)
 
 ### 1 — Clone & Install
 
@@ -237,6 +237,11 @@ The dashboard reads a positions CSV you export from your brokerage. No brokerage
 2. Click the **download icon** (top-right of the positions table)
 3. Select **CSV** format → save the file
 4. Drop it into `portfolio/input/`
+
+**Fidelity**
+1. Log in → **Accounts & Trade** → **Portfolio**
+2. Click the **Download** button (top-right of the positions table)
+3. Save the file (named `Portfolio_Positions_*.csv`) → drop it into `portfolio/input/`
 
 **Morgan Stanley**
 1. Log in → **Accounts** → **Portfolio** → **Gain/Loss** tab

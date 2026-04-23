@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-parse_schwab.py  --  Schwab / E-Trade / Morgan Stanley -> portfolio.json
+parse_schwab.py  --  Schwab / E-Trade / Morgan Stanley / Fidelity -> portfolio.json
 
 Supported exports:
   Schwab          Accounts -> Positions -> Export (CSV)
   E-Trade         Portfolio -> download icon -> CSV
   Morgan Stanley  Portfolio -> Holdings -> Download (XLSX — no conversion needed)
+  Fidelity        Accounts -> Portfolio -> Download -> CSV
 
 Drop any CSV or XLSX files into  portfolio/input/  then run:
     python parse_schwab.py
@@ -65,8 +66,9 @@ COLUMN_MAP = {
     "adjusted cost basis":      "cost_basis",
     "adjusted cost ($)":        "cost_basis",    # Morgan Stanley XLSX fallback
 
-    # ── Cost Per Share (E-Trade uses this; derive total from qty)
+    # ── Cost Per Share (E-Trade / Fidelity use this; derive total from qty)
     "cost/share":               "cost_per_share",
+    "cost basis per share":     "cost_per_share",   # Fidelity
     "price paid":               "cost_per_share",
     "price paid $":             "cost_per_share",
     "avg price":                "cost_per_share",
@@ -77,7 +79,7 @@ COLUMN_MAP = {
     "gain/loss $":                  "gain_loss",
     "gain $ (gain/loss $)":         "gain_loss",
     "gain $":                       "gain_loss",
-    "total gain/loss dollar":       "gain_loss",
+    "total gain/loss dollar":       "gain_loss",    # Fidelity
     "total gain/loss $":            "gain_loss",
     "unrealized gain/loss":         "gain_loss",
     "unrealized gain / loss":       "gain_loss",
@@ -90,8 +92,8 @@ COLUMN_MAP = {
     "gain % (gain/loss %)":         "gain_loss_pct",
     "gain %":                       "gain_loss_pct",
     "unrealized gain/loss (%)":     "gain_loss_pct",  # Morgan Stanley XLSX
-    "total gain/loss percent":  "gain_loss_pct",
-    "total gain/loss %":        "gain_loss_pct",
+    "total gain/loss percent":      "gain_loss_pct",  # Fidelity
+    "total gain/loss %":            "gain_loss_pct",
     "% gain/loss":              "gain_loss_pct",
     "unrealized gain/loss %":   "gain_loss_pct",
 
@@ -195,6 +197,8 @@ def detect_brokerage(content: str, filename: str = "") -> str:
         return "etrade"
     if any(k in fname for k in ("morganstanley", "morgan_stanley", "ms_client", "morgan stanley")):
         return "morgan_stanley"
+    if "portfolio_positions" in fname or "fidelity" in fname:
+        return "fidelity"
     if "positions for account" in head:
         return "schwab"
     if "cost/share" in head or "reinvest dividends" in head:
@@ -204,6 +208,9 @@ def detect_brokerage(content: str, filename: str = "") -> str:
         return "morgan_stanley"
     if "unrealized gain/loss" in head and "ticker symbol" in head:
         return "morgan_stanley"
+    # Fidelity content signature: has both "account name" and "last price change"
+    if "account name" in head and ("last price change" in head or "cost basis per share" in head):
+        return "fidelity"
     return "schwab"
 
 
@@ -317,12 +324,17 @@ def parse_schwab_csv(filepath, content: str) -> list:
 def parse_flat_csv(filepath, content: str, brokerage: str) -> list:
     """
     Handles brokerages that export a flat CSV (one account per file, or an
-    'Account' column per row).  Covers E-Trade and Morgan Stanley.
+    'Account' column per row).  Covers E-Trade, Morgan Stanley, and Fidelity.
     """
+    _default_labels = {
+        "etrade":         "E-Trade Account",
+        "fidelity":       "Fidelity Account",
+        "morgan_stanley": "Morgan Stanley Account",
+    }
     lines      = content.splitlines()
     default_id = extract_generic_account_id(
         lines, filepath,
-        default=("E-Trade Account" if brokerage == "etrade" else "Morgan Stanley Account"),
+        default=_default_labels.get(brokerage, "Account"),
     )
 
     accounts_map: dict = {}
@@ -357,10 +369,17 @@ def parse_flat_csv(filepath, content: str, brokerage: str) -> list:
 
         # Determine which account this row belongs to
         if has_account_col:
-            raw = d.get("account", d.get("account name", d.get("account number", default_id))).strip()
-            suffix    = _account_suffix(raw)
-            acct_key  = re.sub(r'[\s\-]+\d+\s*$', '', raw).strip() or "Account"
-            acct_key  = f"{acct_key}{suffix}"
+            acct_name = d.get("account name", "").strip()
+            acct_num  = d.get("account number", d.get("account", "")).strip()
+            if acct_name and acct_num:
+                # Fidelity: combine "Individual" + last-4 of account number
+                num_suffix = f"-{acct_num[-4:]}" if len(acct_num) >= 4 else f"-{acct_num}"
+                acct_key   = f"{acct_name}{num_suffix}"
+            else:
+                raw      = (acct_name or acct_num or default_id).strip()
+                suffix   = _account_suffix(raw)
+                acct_key = re.sub(r'[\s\-]+\d+\s*$', '', raw).strip() or "Account"
+                acct_key = f"{acct_key}{suffix}"
         else:
             acct_key = default_id
 
@@ -371,8 +390,15 @@ def parse_flat_csv(filepath, content: str, brokerage: str) -> list:
             }
         current = accounts_map[acct_key]
 
-        sym = d.get("symbol", "").strip().upper()
+        sym          = d.get("symbol", "").strip().upper()
+        sec_type_raw = d.get("security_type", "").strip().lower()
+
+        # Blank symbol with Type="Cash" (Fidelity cash rows)
         if not sym:
+            if sec_type_raw == "cash":
+                val = clean_num(d.get("market_value", ""))
+                if val is not None:
+                    current["cash"] += val
             continue
 
         if any(k in sym.lower() for k in CASH_KEYWORDS):
@@ -534,6 +560,8 @@ def parse_csv(filepath) -> tuple:
         return parse_schwab_csv(filepath, content), "Schwab"
     elif brokerage == "etrade":
         return parse_flat_csv(filepath, content, brokerage), "E-Trade"
+    elif brokerage == "fidelity":
+        return parse_flat_csv(filepath, content, brokerage), "Fidelity"
     else:
         return parse_flat_csv(filepath, content, brokerage), "Morgan Stanley"
 
@@ -665,6 +693,7 @@ def main():
         print("\nExport steps:")
         print("  Schwab:         Accounts -> Positions -> Export icon (CSV)")
         print("  E-Trade:        Portfolio -> download icon -> CSV")
+        print("  Fidelity:       Accounts -> Portfolio -> Download -> CSV (Portfolio_Positions_*.csv)")
         print("  Morgan Stanley: Portfolio -> Holdings -> Download (XLSX, drop as-is)")
         print(f"\nDrop the file(s) into: {INPUT_DIR}")
         print("Then run this script again.\n")
