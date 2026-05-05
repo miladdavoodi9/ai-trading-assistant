@@ -1064,21 +1064,50 @@ function renderAccounts(accounts) {
 let _allRows = [];
 
 function renderHoldings(accounts) {
-  // Flatten all positions across accounts
-  const rows = [];
+  // Flatten all positions, then aggregate by symbol
+  const flat = [];
   for (const acct of accounts) {
     for (const p of acct.positions) {
-      rows.push({...p, _account: acct.account_id});
+      flat.push({...p, _account: acct.account_id});
     }
   }
-  // Sort by live_value desc
-  rows.sort((a,b) => (b.live_value||0) - (a.live_value||0));
+
+  const bySymbol = {};
+  for (const p of flat) {
+    const sym = p.symbol;
+    if (!bySymbol[sym]) {
+      bySymbol[sym] = {...p, _accounts: [p._account]};
+    } else {
+      const a = bySymbol[sym];
+      a._accounts.push(p._account);
+      a.shares        = (a.shares        || 0) + (p.shares        || 0);
+      a.live_value    = (a.live_value    || 0) + (p.live_value    || 0);
+      a.live_day_change = (a.live_day_change || 0) + (p.live_day_change || 0);
+      // sum cost_basis only when both sides have it
+      if (a.cost_basis != null && p.cost_basis != null) a.cost_basis += p.cost_basis;
+      else a.cost_basis = a.cost_basis ?? p.cost_basis;
+      // sum gain/loss only when both sides have it
+      if (a.live_gain_loss != null && p.live_gain_loss != null) a.live_gain_loss += p.live_gain_loss;
+      else a.live_gain_loss = a.live_gain_loss ?? p.live_gain_loss;
+      // recalculate pct fields from totals
+      a.live_gain_loss_pct = (a.live_gain_loss != null && a.cost_basis)
+        ? a.live_gain_loss / a.cost_basis * 100 : null;
+      const prev = a.live_value - a.live_day_change;
+      a.live_day_change_pct = prev ? a.live_day_change / prev * 100 : 0;
+    }
+  }
+
+  const rows = Object.values(bySymbol)
+    .sort((a,b) => (b.live_value||0) - (a.live_value||0));
   _allRows = rows;
 
   const totalMV = rows.reduce((s,r) => s + (r.live_value||0), 0);
   _portfolioTotal = totalMV;
+  const posLabel = flat.length !== rows.length
+    ? `${flat.length} positions (${rows.length} symbols)`
+    : `${rows.length} positions`;
   document.getElementById('holdings-sub').textContent =
-    `${rows.length} positions across ${accounts.length} accounts — ${fmt(totalMV)} invested`;
+    `${posLabel} across ${accounts.length} accounts — ${fmt(totalMV)} invested`;
 
   renderHoldingsRows(_allRows);
 }
@@ -1094,13 +1123,17 @@ function renderHoldingsRows(rows) {
     const glp   = p.live_gain_loss_pct;
     const dayC  = p.live_day_change;
     const dayPct = p.live_day_change_pct;
-    const isSelected = p.symbol === _detailSym && p._account === (_portfolio?.accounts?.find(a=>a.positions.some(pos=>pos.symbol===_detailSym))?.account_id);
+    const isSelected = p.symbol === _detailSym;
+    const accts = p._accounts || [p._account];
+    const acctTag = accts.length > 1
+      ? `${accts.length} accounts`
+      : accountLabel(accts[0]);
 
     return `<tr onclick="selectStock('${p.symbol}')" data-sym="${p.symbol}" class="${isSelected?'selected':''}">
       <td>
         <div class="sym-cell">
           <div class="sym">${p.symbol}</div>
-          <div class="acct-tag">${accountLabel(p._account)}</div>
+          <div class="acct-tag">${acctTag}</div>
         </div>
       </td>
       <td style="color:var(--dim);max-width:160px;overflow:hidden;text-overflow:ellipsis;">${(p.name||'').substring(0,24)}</td>
@@ -1122,7 +1155,7 @@ function filterTable(q) {
   const filtered = _allRows.filter(p =>
     p.symbol.toLowerCase().includes(q) ||
     (p.name||'').toLowerCase().includes(q) ||
-    p._account.toLowerCase().includes(q)
+    (p._accounts||[p._account]).some(a => a.toLowerCase().includes(q))
   );
   renderHoldingsRows(filtered);
 }
