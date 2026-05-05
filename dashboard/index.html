@@ -694,7 +694,7 @@ td.right { text-align: right; }
             <div class="section-subtitle" id="holdings-sub">Loading…</div>
           </div>
           <div style="display:flex;gap:8px;align-items:center;">
-            <button id="clear-acct-filter" onclick="selectAccount(_selectedAccount)" style="
+            <button id="clear-acct-filter" onclick="clearAccountFilter()" style="
               display:none;background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.35);
               color:var(--accent2);padding:4px 10px;border-radius:6px;font-size:.78rem;
               cursor:pointer;white-space:nowrap;
@@ -1047,7 +1047,7 @@ function renderAccounts(accounts) {
     });
 
     const card = document.createElement('div');
-    card.className = 'acct-card' + (_selectedAccount === acct.account_id ? ' selected' : '');
+    card.className = 'acct-card' + (_selectedAccounts.has(acct.account_id) ? ' selected' : '');
     card.dataset.accountId = acct.account_id;
     card.onclick = () => selectAccount(acct.account_id);
     card.innerHTML = `
@@ -1072,15 +1072,27 @@ function renderAccounts(accounts) {
 }
 
 /* ── Account filter ─────────────────────────────────────────────── */
-let _selectedAccount = null;
+let _selectedAccounts = new Set();
 
 function selectAccount(acctId) {
-  _selectedAccount = (_selectedAccount === acctId) ? null : acctId;
+  if (_selectedAccounts.has(acctId)) {
+    _selectedAccounts.delete(acctId);
+  } else {
+    _selectedAccounts.add(acctId);
+  }
   document.querySelectorAll('.acct-card').forEach(c => {
-    c.classList.toggle('selected', c.dataset.accountId === _selectedAccount);
+    c.classList.toggle('selected', _selectedAccounts.has(c.dataset.accountId));
   });
   const btn = document.getElementById('clear-acct-filter');
-  if (btn) btn.style.display = _selectedAccount ? 'block' : 'none';
+  if (btn) btn.style.display = _selectedAccounts.size ? 'block' : 'none';
+  if (_portfolio) renderHoldings(_portfolio.accounts);
+}
+
+function clearAccountFilter() {
+  _selectedAccounts.clear();
+  document.querySelectorAll('.acct-card').forEach(c => c.classList.remove('selected'));
+  const btn = document.getElementById('clear-acct-filter');
+  if (btn) btn.style.display = 'none';
   if (_portfolio) renderHoldings(_portfolio.accounts);
 }
 
@@ -1089,8 +1101,8 @@ let _allRows = [];
 
 function renderHoldings(accounts) {
   // Flatten positions, optionally filtered to one account
-  const source = _selectedAccount
-    ? accounts.filter(a => a.account_id === _selectedAccount)
+  const source = _selectedAccounts.size
+    ? accounts.filter(a => _selectedAccounts.has(a.account_id))
     : accounts;
   const flat = [];
   for (const acct of source) {
@@ -1133,8 +1145,8 @@ function renderHoldings(accounts) {
   const posLabel = flat.length !== rows.length
     ? `${flat.length} positions (${rows.length} symbols)`
     : `${rows.length} positions`;
-  const acctLabel = _selectedAccount
-    ? `${accountLabel(_selectedAccount)}`
+  const acctLabel = _selectedAccounts.size
+    ? `${_selectedAccounts.size} of ${accounts.length} accounts`
     : `${accounts.length} accounts`;
   document.getElementById('holdings-sub').textContent =
     `${posLabel} across ${acctLabel} — ${fmt(totalMV)} invested`;
