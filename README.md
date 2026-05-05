@@ -45,7 +45,7 @@ Individual investors managing multiple brokerage accounts face three core fricti
 ## Product Requirements Document (PRD)
 
 ### Overview
-A locally-hosted web dashboard built with Python (FastAPI) and a browser frontend. On launch it parses the user's Schwab CSV exports, fetches live prices, and serves a dashboard at `http://localhost:8765`. AI analysis is powered by the Anthropic Claude API.
+A locally-hosted web dashboard built with Python (FastAPI) and a browser frontend. On launch it parses the user's Schwab CSV exports, fetches live prices, and serves a dashboard at `http://localhost:8866`. AI analysis is powered by the Anthropic Claude API.
 
 ### User Stories
 
@@ -153,7 +153,7 @@ This is a **research tool**. It does not execute trades, manage money, or connec
 
 ## The Dashboard
 
-Open your browser to `http://localhost:8765` after starting the app. Here's what you'll find:
+Open your browser to `http://localhost:8866` after starting the app. Here's what you'll find:
 
 ### Portfolio Overview
 The top bar shows your **total portfolio value** and **today's dollar and percentage change**, updated every 60 seconds with live market prices. Below it, three account cards show your Individual brokerage, Solo 401(k), and Rollover IRA — each with live equity values, today's change, and a visual breakdown of your holdings.
@@ -268,7 +268,7 @@ Or from a terminal:
 python dashboard.py
 ```
 
-Then open **http://localhost:8765** in your browser.
+Then open **http://localhost:8866** in your browser.
 
 ---
 

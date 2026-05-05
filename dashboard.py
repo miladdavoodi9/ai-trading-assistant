@@ -4,7 +4,7 @@ dashboard.py — AI Trading Dashboard backend
 FastAPI server: live prices, per-account strategy, streaming agent analysis
 
 Run: python dashboard.py
-Then open: http://localhost:8765
+Then open: http://localhost:8866
 """
 
 import json
@@ -647,7 +647,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 54)
     print("  AI Trading Dashboard")
     print("=" * 54)
-    print("  URL  : http://localhost:8765")
+    print("  URL  : http://localhost:8866")
     print("  Stop : Ctrl+C")
     print("=" * 54 + "\n")
-    uvicorn.run(app, host="0.0.0.0", port=8765, reload=False, log_level="warning")
+    uvicorn.run(app, host="0.0.0.0", port=8866, reload=False, log_level="warning")
