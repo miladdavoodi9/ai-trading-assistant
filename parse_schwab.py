@@ -228,6 +228,8 @@ def detect_brokerage(content: str, filename: str = "") -> str:
         return "etrade"
     if any(k in fname for k in ("morganstanley", "morgan_stanley", "ms_client", "morgan stanley")):
         return "morgan_stanley"
+    if any(k in fname for k in ("merrill", "merrilledge", "merrill_lynch", "manual_positions")):
+        return "manual"
     if "portfolio_positions" in fname or "fidelity" in fname:
         return "fidelity"
     if "positions for account" in head:
@@ -361,6 +363,7 @@ def parse_flat_csv(filepath, content: str, brokerage: str) -> list:
         "etrade":         "E-Trade Account",
         "fidelity":       "Fidelity Account",
         "morgan_stanley": "Morgan Stanley Account",
+        "manual":         "Merrill Lynch",
     }
     lines      = content.splitlines()
     default_id = extract_generic_account_id(
@@ -796,6 +799,8 @@ def parse_csv(filepath) -> tuple:
         return parse_flat_csv(filepath, content, brokerage), "E-Trade"
     elif brokerage == "fidelity":
         return parse_flat_csv(filepath, content, brokerage), "Fidelity"
+    elif brokerage == "manual":
+        return parse_flat_csv(filepath, content, brokerage), "Merrill Lynch"
     else:
         return parse_flat_csv(filepath, content, brokerage), "Morgan Stanley"
 
