@@ -442,47 +442,91 @@ td.right { text-align: right; }
 }
 .agent-btn:disabled { opacity: .45; cursor: wait; }
 .agent-btn .icon { font-size: .95rem; }
-#agent-output-wrap {
-  margin: 0 18px 18px;
+/* Analysis modal */
+#analysis-backdrop {
   display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.5);
+  backdrop-filter: blur(3px);
+  z-index: 300;
 }
-#agent-output-wrap.visible { display: block; }
-#agent-output-header {
+#analysis-backdrop.open { display: block; }
+#analysis-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -48%) scale(.97);
+  width: min(760px, 92vw);
+  max-height: 85vh;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  z-index: 301;
+  opacity: 0;
+  pointer-events: none;
+  transition: transform .25s cubic-bezier(.4,0,.2,1), opacity .25s;
+  overflow: hidden;
+}
+#analysis-modal.open {
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+#analysis-modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
-#agent-output-title {
-  font-size: .8rem;
+#analysis-modal-title {
+  font-size: .9rem;
   font-weight: 700;
   color: var(--accent2);
-  letter-spacing: .3px;
+  letter-spacing: .2px;
 }
-#agent-output-close {
-  background: none;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 1.1rem;
-  line-height: 1;
-  padding: 2px 5px;
-  border-radius: 4px;
-}
-#agent-output-close:hover { color: var(--text); background: var(--border); }
-#agent-output {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 16px;
-  font-size: .82rem;
-  line-height: 1.7;
-  color: var(--dim);
-  max-height: 450px;
+#analysis-modal-body {
+  flex: 1;
   overflow-y: auto;
-  white-space: pre-wrap;
-  font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+  padding: 20px 24px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: .9rem;
+  line-height: 1.8;
+  color: var(--text);
 }
+#analysis-modal-body .md-h1 { font-size:1.1rem; font-weight:700; color:var(--accent2); margin:1.2rem 0 .5rem; letter-spacing:-.2px; }
+#analysis-modal-body .md-h2 { font-size:1rem; font-weight:700; color:var(--text); margin:1rem 0 .4rem; }
+#analysis-modal-body .md-h3 { font-size:.9rem; font-weight:600; color:var(--dim); margin:.8rem 0 .3rem; }
+#analysis-modal-body .md-section { padding:.5rem .8rem; margin:.4rem 0; background:rgba(99,102,241,.07); border-left:3px solid var(--accent); border-radius:0 6px 6px 0; }
+#analysis-modal-body .md-bullet { padding:.25rem 0 .25rem 1.4rem; position:relative; }
+#analysis-modal-body .md-bullet::before { content:'›'; position:absolute; left:0; color:var(--accent2); font-weight:700; }
+#analysis-modal-body strong { color:var(--text); font-weight:600; }
+#analysis-modal-body hr { border:none; border-top:1px solid var(--border); margin:.8rem 0; }
+
+/* History panel */
+.history-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  background: var(--card);
+  transition: border-color .15s;
+  gap: 12px;
+}
+.history-item:hover { border-color: var(--accent); }
+.history-item-left { display:flex; align-items:flex-start; gap:12px; flex:1; min-width:0; }
+.history-icon { font-size:1.1rem; flex-shrink:0; margin-top:2px; }
+.history-title { font-size:.85rem; font-weight:600; color:var(--text); margin-bottom:2px; }
+.history-preview { font-size:.78rem; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:500px; }
+.history-date { font-size:.75rem; color:var(--muted); flex-shrink:0; white-space:nowrap; }
 
 /* ── Stock Detail Panel ───────────────────────────────────────── */
 #detail-backdrop {
@@ -776,23 +820,18 @@ td.right { text-align: right; }
           <button class="agent-btn" onclick="runAgent('risk')" title="Risk assessment"><span class="icon">🛡</span>Risk</button>
           <button class="agent-btn" onclick="runAgent('thesis')" title="Full investment thesis"><span class="icon">📝</span>Thesis</button>
         </div>
-        <div id="agent-output-wrap">
-          <div id="agent-output-header">
-            <div id="agent-output-title"></div>
-            <div style="display:flex;gap:6px;align-items:center;">
-              <button id="agent-download-btn" onclick="downloadAgentOutput()" style="
-                background:var(--surface);border:1px solid var(--border2);color:var(--dim);
-                padding:4px 10px;border-radius:5px;cursor:pointer;font-size:.75rem;font-weight:600;
-                display:none;transition:all .15s;
-              " onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent2)';"
-                 onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--dim)';">
-                ↓ Export
-              </button>
-              <button id="agent-output-close" onclick="closeAgentOutput()">✕</button>
-            </div>
+      </div>
+
+      <!-- Analysis History -->
+      <div id="analysis-history-section" style="display:none;">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Recent Analyses</div>
+            <div class="section-subtitle" id="history-sub"></div>
           </div>
-          <div id="agent-output"></div>
+          <button onclick="clearHistory()" style="font-size:.75rem;background:none;border:1px solid var(--border);color:var(--muted);padding:4px 10px;border-radius:6px;cursor:pointer;">Clear all</button>
         </div>
+        <div id="history-list"></div>
       </div>
 
       <!-- Bottom padding -->
@@ -929,6 +968,15 @@ td.right { text-align: right; }
   </div>
 </div>
 
+<div id="analysis-backdrop" onclick="closeAnalysisModal()"></div>
+<div id="analysis-modal">
+  <div id="analysis-modal-header">
+    <div id="analysis-modal-title"></div>
+    <button onclick="closeAnalysisModal()" style="background:none;border:none;color:var(--muted);font-size:1.2rem;cursor:pointer;padding:4px 8px;border-radius:4px;line-height:1;">✕</button>
+  </div>
+  <div id="analysis-modal-body"></div>
+</div>
+
 <script>
 /* ── State ──────────────────────────────────────────────────────── */
 let _portfolio = null;
@@ -936,6 +984,8 @@ let _portfolioTotal = 0;
 let _selectedTicker = '';
 let _agentAbort = null;
 let _detailSym = null;
+let _analysisAbort = null;
+let _analysisCurrent = null; // {agentType, symbol, rawText}
 
 /* ── Utilities ──────────────────────────────────────────────────── */
 const fmt  = (v, d=2) => v == null ? '—' : '$' + Number(v).toLocaleString('en-US', {minimumFractionDigits:d,maximumFractionDigits:d});
@@ -1477,6 +1527,27 @@ function _setChatHistory(accountId, messages) {
 
 let _chatMessages = [];
 
+/* ── Analysis History ───────────────────────────────────────────── */
+const HISTORY_KEY = 'analysis_history_v1';
+const HISTORY_MAX = 30;
+
+function _getHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch { return []; }
+}
+function _saveHistory(entries) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(entries));
+}
+function _addToHistory(entry) {
+  const list = _getHistory().filter(e => !(e.agentType === entry.agentType && e.symbol === entry.symbol));
+  list.unshift(entry);
+  _saveHistory(list.slice(0, HISTORY_MAX));
+  renderHistoryList();
+}
+function clearHistory() {
+  _saveHistory([]);
+  renderHistoryList();
+}
+
 function renderChatThread() {
   const thread = document.getElementById('chat-thread');
   if (!_chatMessages.length) { thread.style.display = 'none'; return; }
@@ -1793,6 +1864,67 @@ async function loadStrategy(accountId, btn) {
   }
 }
 
+/* ── Analysis Modal ─────────────────────────────────────────────── */
+function openAnalysisModal(agentType, symbol) {
+  document.getElementById('analysis-backdrop').classList.add('open');
+  document.getElementById('analysis-modal').classList.add('open');
+  document.getElementById('analysis-modal-title').textContent =
+    `${agentIcon(agentType)} ${agentType.charAt(0).toUpperCase()+agentType.slice(1)} Analysis — ${symbol}`;
+  document.getElementById('analysis-modal-body').innerHTML =
+    '<div style="color:var(--muted);padding:20px 0;">Generating…</div>';
+  _analysisCurrent = { agentType, symbol, rawText: '' };
+}
+
+function closeAnalysisModal() {
+  if (_analysisAbort) { _analysisAbort.close(); _analysisAbort = null; }
+  document.getElementById('analysis-backdrop').classList.remove('open');
+  document.getElementById('analysis-modal').classList.remove('open');
+  document.querySelectorAll('.agent-btn').forEach(b => b.disabled = false);
+  if (_analysisCurrent && _analysisCurrent.rawText.trim().length > 20) {
+    _addToHistory({
+      id: Date.now(),
+      agentType: _analysisCurrent.agentType,
+      symbol: _analysisCurrent.symbol,
+      date: new Date().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}),
+      content: _analysisCurrent.rawText,
+    });
+  }
+  _analysisCurrent = null;
+}
+
+function renderHistoryList() {
+  const list = _getHistory();
+  const section = document.getElementById('analysis-history-section');
+  const container = document.getElementById('history-list');
+  const sub = document.getElementById('history-sub');
+  if (!list.length) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+  sub.textContent = `${list.length} saved analysis${list.length !== 1 ? 'es' : ''}`;
+  container.innerHTML = list.map(e => `
+    <div class="history-item" onclick="reopenAnalysis(${e.id})">
+      <div class="history-item-left">
+        <span class="history-icon">${agentIcon(e.agentType)}</span>
+        <div>
+          <div class="history-title"><strong>${e.symbol}</strong> — ${e.agentType.charAt(0).toUpperCase()+e.agentType.slice(1)}</div>
+          <div class="history-preview">${(e.content || '').replace(/<[^>]+>/g,'').substring(0,120)}…</div>
+        </div>
+      </div>
+      <div class="history-date">${e.date}</div>
+    </div>
+  `).join('');
+}
+
+function reopenAnalysis(id) {
+  const entry = _getHistory().find(e => e.id === id);
+  if (!entry) return;
+  openAnalysisModal(entry.agentType, entry.symbol);
+  document.getElementById('analysis-modal-body').innerHTML = renderMarkdown(entry.content);
+  _analysisCurrent = null; // don't re-save on close
+}
+
 /* ── Agent Runner ───────────────────────────────────────────────── */
 function agentIcon(type) {
   const icons = {quick:'⚡',technical:'📊',fundamental:'🏗',sentiment:'🎯',options:'📈',risk:'🛡',thesis:'📝',guidance:'🧭'};
@@ -1809,71 +1941,65 @@ function runAgentFor(type, sym) {
 
 async function runAgent(agentType) {
   const sym = _selectedTicker;
-  if (!sym) {
-    alert('Please select a stock first.');
-    return;
-  }
+  if (!sym) { alert('Please select a stock first.'); return; }
+  if (_analysisAbort) { _analysisAbort.close(); _analysisAbort = null; }
 
-  // Abort previous
-  if (_agentAbort) { _agentAbort.close(); _agentAbort = null; }
-
-  // UI prep
-  const outputWrap = document.getElementById('agent-output-wrap');
-  const output     = document.getElementById('agent-output');
-  const title      = document.getElementById('agent-output-title');
-  outputWrap.classList.add('visible');
-  output.textContent = '';
-  title.innerHTML = `<span class="loading-spinner"></span> ${agentIcon(agentType)} ${agentType.charAt(0).toUpperCase()+agentType.slice(1)} Analysis — ${sym}`;
-
-  // Disable buttons
+  openAnalysisModal(agentType, sym);
   document.querySelectorAll('.agent-btn').forEach(b => b.disabled = true);
 
   const url = `/api/agent/${agentType}/${sym}`;
-  const es  = new EventSource(url);
-  _agentAbort = es;
+  const es = new EventSource(url);
+  _analysisAbort = es;
+
+  const body = document.getElementById('analysis-modal-body');
+  let rafPending = false;
+
+  function flush() {
+    rafPending = false;
+    if (_analysisCurrent) body.innerHTML = renderMarkdown(_analysisCurrent.rawText);
+    body.scrollTop = body.scrollHeight;
+  }
 
   es.onmessage = e => {
     if (e.data === '[DONE]') {
       es.close();
-      _agentAbort = null;
-      title.textContent = `${agentIcon(agentType)} ${agentType.charAt(0).toUpperCase()+agentType.slice(1)} Analysis — ${sym}`;
+      _analysisAbort = null;
       document.querySelectorAll('.agent-btn').forEach(b => b.disabled = false);
-      document.getElementById('agent-download-btn').style.display = 'inline-block';
+      if (_analysisCurrent && _analysisCurrent.rawText.trim().length > 20) {
+        _addToHistory({
+          id: Date.now(),
+          agentType: _analysisCurrent.agentType,
+          symbol: _analysisCurrent.symbol,
+          date: new Date().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}),
+          content: _analysisCurrent.rawText,
+        });
+      }
+      if (!rafPending) { rafPending = true; requestAnimationFrame(flush); }
       return;
     }
     try {
       const { text, error } = JSON.parse(e.data);
       if (error) {
-        output.textContent += `\n⚠ Error: ${error}`;
+        if (_analysisCurrent) _analysisCurrent.rawText += `\n⚠ Error: ${error}`;
         es.close();
         document.querySelectorAll('.agent-btn').forEach(b => b.disabled = false);
         return;
       }
-      if (text) {
-        output.textContent += text;
-        output.scrollTop = output.scrollHeight;
+      if (text && _analysisCurrent) {
+        _analysisCurrent.rawText += text;
+        if (!rafPending) { rafPending = true; requestAnimationFrame(flush); }
       }
-    } catch(err) { /* skip */ }
+    } catch(err) {}
   };
 
   es.onerror = () => {
     es.close();
-    _agentAbort = null;
-    title.textContent = `⚠ ${agentType} Analysis — ${sym}`;
+    _analysisAbort = null;
     document.querySelectorAll('.agent-btn').forEach(b => b.disabled = false);
-    if (!output.textContent) {
-      output.textContent = 'Connection error. Make sure ANTHROPIC_API_KEY is set and the server is running.';
+    if (_analysisCurrent && !_analysisCurrent.rawText) {
+      body.innerHTML = '<div style="color:#f87171">Connection error. Check ANTHROPIC_API_KEY.</div>';
     }
   };
-
-  output.scrollIntoView({behavior:'smooth', block:'start'});
-}
-
-function closeAgentOutput() {
-  if (_agentAbort) { _agentAbort.close(); _agentAbort = null; }
-  document.getElementById('agent-output-wrap').classList.remove('visible');
-  document.getElementById('agent-download-btn').style.display = 'none';
-  document.querySelectorAll('.agent-btn').forEach(b => b.disabled = false);
 }
 
 function downloadAgentOutput() {
@@ -1930,6 +2056,7 @@ setInterval(async () => {
 
 /* ── Init ───────────────────────────────────────────────────────── */
 loadPortfolio();
+renderHistoryList();
 </script>
 </body>
 </html>
