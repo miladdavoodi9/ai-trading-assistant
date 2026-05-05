@@ -136,10 +136,12 @@ The dashboard reads a positions CSV you export from your brokerage. No brokerage
 3. Save the file (named `Portfolio_Positions_*.csv`) → drop it into `portfolio/input/`
 
 **Morgan Stanley**
-1. Log in → **Accounts** → **Portfolio** → **Gain/Loss** tab
-2. Click **Download** → open the file in Excel
-3. **File → Save As → CSV (Comma delimited)**
-4. Drop the CSV into `portfolio/input/`
+1. Log in → click your name or the account menu → **Home** (the dashboard overview page)
+2. Look for a **Download** or **Export** icon (top-right of the page)
+3. Save the `.xlsx` file as-is — no Excel conversion needed
+4. Drop the `.xlsx` file into `portfolio/input/`
+
+> Note: The Home Page export shows your top holdings but does not include cost basis. Unrealized gain/loss will show as N/A for Morgan Stanley positions.
 
 You can mix files from different brokerages — drop them all into `portfolio/input/` and the parser auto-detects each format and merges them into one view.
 

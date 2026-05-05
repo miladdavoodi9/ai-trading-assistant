@@ -436,12 +436,192 @@ def parse_flat_csv(filepath, content: str, brokerage: str) -> list:
 # Product types to treat as cash rather than positions
 _MS_CASH_TYPES = {"cash, mmf and bdp", "cash"}
 # Institutions to skip entirely (non-brokerage linked accounts)
-_MS_SKIP_INSTITUTIONS = {"chase", "bank of america", "wells fargo", "citibank"}
+_MS_SKIP_INSTITUTIONS = {"chase", "bank of america", "wells fargo", "citibank", "citi"}
+
+
+def _ms_acct_key(raw: str) -> str:
+    """Normalize 'AAA - 11031' or 'Stock Plan & Linked Brokerage - 3329' -> clean key."""
+    raw = raw.strip().split("\n")[0].strip()
+    num_m = re.search(r"(\d{3,})\s*$", raw)
+    suffix = f"-{num_m.group(1)[-4:]}" if num_m else ""
+    base = re.sub(r"\s*[-–]\s*\d+\s*$", "", raw).strip()
+    if "stock plan" in base.lower() or "linked brokerage" in base.lower():
+        base = "Stock Plan"
+    elif not base or base.lower() == "morgan stanley":
+        base = "Morgan Stanley"
+    return f"{base}{suffix}"
+
+
+def _parse_ms_xlsx_home(ws) -> list:
+    """
+    Parse the Morgan Stanley 'Home Page' XLSX export.
+    Extracts per-account totals from 'Investment Details' and individual
+    securities from 'My Top Holdings', then distributes shares proportionally.
+    Cost basis is not available in this export format.
+    """
+    accounts_map = {}   # acct_key -> account dict (with temp _stocks_val)
+    top_holdings = []   # [{name, symbol, quantity, price, market_value}]
+
+    # ── state machine ──────────────────────────────────────────────────────────
+    NONE, INV_DETAILS, TOP_HOLDINGS = 0, 1, 2
+    state = NONE
+    inv_headers = None
+    inv_cols = {}          # col-name -> column index for Investment Details
+    th_headers = None      # Top Holdings column names (lowercase)
+    current_group = ""     # tracks group header row (e.g. "Chase") for skip logic
+
+    for i in range(ws.nrows):
+        row_vals = [str(ws.cell_value(i, j)).strip() for j in range(ws.ncols)]
+        first = row_vals[0]
+
+        # ── section transitions ────────────────────────────────────────────────
+        if "investment details" in first.lower():
+            state = INV_DETAILS
+            inv_headers = None
+            inv_cols = {}
+            current_group = ""
+            continue
+
+        if "my top holdings" in first.lower():
+            state = TOP_HOLDINGS
+            th_headers = None
+            continue
+
+        # Other section headers reset state
+        if first and not first.startswith(" ") and state != NONE:
+            other_sections = {
+                "liabilities", "available funds", "available cash",
+                "monthly projected", "during non-market", "today's change",
+                "important notice", "additional information", "©",
+            }
+            if any(s in first.lower() for s in other_sections):
+                state = NONE
+                continue
+
+        # ── Investment Details section ─────────────────────────────────────────
+        if state == INV_DETAILS:
+            if inv_headers is None:
+                # Wait for header row ("Group/Account" in first cell)
+                if "group/account" in first.lower():
+                    inv_headers = [v.lower() for v in row_vals]
+                    for ci, h in enumerate(inv_headers):
+                        if h == "cash($)":
+                            inv_cols["cash"] = ci
+                        elif "mmf bank" in h or "mmf" in h:
+                            inv_cols["mmf"] = ci
+                        elif h == "stocks($)":
+                            inv_cols["stocks"] = ci
+                        elif h == "positions($)":
+                            inv_cols["positions"] = ci
+                continue
+
+            if not any(row_vals):
+                continue
+
+            raw_first = str(ws.cell_value(i, 0))
+
+            if not raw_first.startswith(" "):
+                # Group-header row (e.g. "Morgan Stanley", "Chase")
+                current_group = raw_first.strip().lower()
+                continue
+
+            # Indented = actual account row
+            if any(bank in current_group for bank in _MS_SKIP_INSTITUTIONS):
+                continue
+
+            acct_key = _ms_acct_key(raw_first)
+
+            def _gcv(col_name):
+                ci = inv_cols.get(col_name)
+                return clean_num(row_vals[ci]) if ci is not None and ci < len(row_vals) else None
+
+            stocks_val  = _gcv("stocks")   or 0.0
+            cash_val    = (_gcv("cash")    or 0.0) + (_gcv("mmf") or 0.0)
+            pos_val     = _gcv("positions") or 0.0
+
+            if acct_key not in accounts_map:
+                accounts_map[acct_key] = {
+                    "account_id":   acct_key,
+                    "positions":    [],
+                    "cash":         cash_val,
+                    "total_equity": round(pos_val + cash_val, 2),
+                    "_stocks_val":  stocks_val,
+                }
+
+        # ── My Top Holdings section ────────────────────────────────────────────
+        elif state == TOP_HOLDINGS:
+            if th_headers is None:
+                if "name" in first.lower() and any("symbol" in v.lower() for v in row_vals if v):
+                    th_headers = [v.lower() for v in row_vals]
+                continue
+
+            if not first or any(first.lower().startswith(s) for s in ("during", "please", "*")):
+                state = NONE
+                continue
+
+            def _th(keyword):
+                for ci, h in enumerate(th_headers):
+                    if keyword in h:
+                        return row_vals[ci] if ci < len(row_vals) else None
+                return None
+
+            symbol = (_th("symbol") or "").strip().upper()
+            if not symbol or symbol == "-":
+                continue
+
+            qty = clean_num(_th("quantity"))
+            price = clean_num(_th("latest price"))
+            mv = clean_num(_th("market value"))
+            if symbol and (qty or mv):
+                top_holdings.append({
+                    "name": first,
+                    "symbol": symbol,
+                    "quantity": qty or 0.0,
+                    "price": price,
+                    "market_value": mv or 0.0,
+                })
+
+    if not accounts_map or not top_holdings:
+        return []
+
+    # ── Distribute top holdings proportionally across accounts ─────────────────
+    total_stocks = sum(a.get("_stocks_val", 0) for a in accounts_map.values())
+
+    for acct in accounts_map.values():
+        acct_stocks = acct.pop("_stocks_val", 0)
+        prop = (acct_stocks / total_stocks) if total_stocks > 0 else (1.0 / len(accounts_map))
+
+        for h in top_holdings:
+            shares = round(h["quantity"] * prop, 4) if h["quantity"] else None
+            mv     = round(h["market_value"] * prop, 2) if h["market_value"] else None
+            acct["positions"].append({
+                "symbol":                   h["symbol"],
+                "name":                     h["name"],
+                "shares":                   shares,
+                "price":                    h["price"],
+                "market_value":             mv,
+                "cost_basis":               None,
+                "avg_cost_per_share":       None,
+                "unrealized_gain_loss":     None,
+                "unrealized_gain_loss_pct": None,
+                "pct_of_account":           round(mv / acct_stocks * 100, 2) if (acct_stocks and mv) else None,
+                "security_type":            "Stock",
+            })
+
+        if acct["total_equity"] == 0.0:
+            acct["total_equity"] = round(
+                sum(p.get("market_value") or 0 for p in acct["positions"]) + acct["cash"], 2
+            )
+
+    return list(accounts_map.values())
+
 
 def parse_ms_xlsx(filepath) -> list:
     """
-    Parse Morgan Stanley's native XLSX export (Holdings view).
-    Groups rows by 'Account Number' column; skips linked bank accounts.
+    Parse Morgan Stanley's XLSX export.
+    Supports two formats:
+      - Holdings view: has 'Account Number' and 'Symbol' column headers (detailed, with cost basis)
+      - Home Page view: has 'Investment Details' and 'My Top Holdings' sections (summary, no cost basis)
     """
     if not _XLRD_OK:
         print("  WARNING: xlrd not installed — cannot read XLSX. Run: pip install xlrd==1.2.0")
@@ -450,7 +630,7 @@ def parse_ms_xlsx(filepath) -> list:
     wb = xlrd.open_workbook(str(filepath))
     ws = wb.sheet_by_index(0)
 
-    # Find the header row (contains 'Account Number' and 'Symbol')
+    # ── Try Holdings format first ──────────────────────────────────────────────
     header_row_idx = None
     for i in range(ws.nrows):
         row = [str(ws.cell_value(i, j)).strip() for j in range(ws.ncols)]
@@ -458,93 +638,69 @@ def parse_ms_xlsx(filepath) -> list:
             header_row_idx = i
             break
 
-    if header_row_idx is None:
-        print(f"  WARNING: could not find header row in {filepath.name}")
-        return []
-
-    headers = [normalize_header(str(ws.cell_value(header_row_idx, j)).strip())
-               for j in range(ws.ncols)]
-
-    # Also keep raw headers for account number and institution columns
-    raw_headers = [str(ws.cell_value(header_row_idx, j)).strip().lower()
+    if header_row_idx is not None:
+        headers = [normalize_header(str(ws.cell_value(header_row_idx, j)).strip())
                    for j in range(ws.ncols)]
-    acct_col  = raw_headers.index("account number") if "account number" in raw_headers else None
-    inst_col  = raw_headers.index("institution")    if "institution"    in raw_headers else None
-    ptype_col = raw_headers.index("product type")   if "product type"   in raw_headers else None
+        raw_headers = [str(ws.cell_value(header_row_idx, j)).strip().lower()
+                       for j in range(ws.ncols)]
+        acct_col  = raw_headers.index("account number") if "account number" in raw_headers else None
+        inst_col  = raw_headers.index("institution")    if "institution"    in raw_headers else None
+        ptype_col = raw_headers.index("product type")   if "product type"   in raw_headers else None
 
-    accounts_map = {}
+        accounts_map = {}
 
-    for i in range(header_row_idx + 1, ws.nrows):
-        row = [str(ws.cell_value(i, j)).strip() for j in range(ws.ncols)]
-        if not any(row):
-            continue
+        for i in range(header_row_idx + 1, ws.nrows):
+            row = [str(ws.cell_value(i, j)).strip() for j in range(ws.ncols)]
+            if not any(row):
+                continue
+            first = row[0] if row else ""
+            if len(first) > 80 or not re.search(r"\d", first):
+                continue
+            if first.lower() in ("total", ""):
+                continue
+            institution = row[inst_col].strip() if inst_col is not None else ""
+            if any(bank in institution.lower() for bank in _MS_SKIP_INSTITUTIONS):
+                continue
 
-        # Skip footnotes / disclaimer rows
-        # Valid account IDs are short and always contain digits (e.g. "AAA - 1103")
-        first = row[0] if row else ""
-        if len(first) > 80 or not re.search(r'\d', first):
-            continue
-        if first.lower() in ("total", ""):
-            continue
+            raw_acct  = row[acct_col].strip() if acct_col is not None else "Morgan Stanley"
+            acct_key  = _ms_acct_key(raw_acct)
 
-        # Skip linked bank accounts (Chase, etc.)
-        institution = row[inst_col].strip() if inst_col is not None else ""
-        if any(bank in institution.lower() for bank in _MS_SKIP_INSTITUTIONS):
-            continue
+            if acct_key not in accounts_map:
+                accounts_map[acct_key] = {
+                    "account_id": acct_key,
+                    "positions": [], "cash": 0.0, "total_equity": 0.0,
+                }
+            current = accounts_map[acct_key]
 
-        # Determine account key
-        raw_acct = row[acct_col].strip() if acct_col is not None else "Morgan Stanley"
-        # raw_acct looks like "AAA - 1103" or "Stock Plan & Linked Brokerage - 3329"
-        # Normalize to a clean label + last-4 suffix
-        num_m = re.search(r'(\d{4,})\s*$', raw_acct)
-        suffix    = f"-{num_m.group(1)[-4:]}" if num_m else ""
-        base_name = re.sub(r'\s*[-–]\s*\d+\s*$', '', raw_acct).strip()
-        # Shorten verbose names
-        if "stock plan" in base_name.lower() or "linked brokerage" in base_name.lower():
-            base_name = "Stock Plan"
-        elif not base_name:
-            base_name = "Morgan Stanley"
-        acct_key = f"{base_name}{suffix}"
+            row += [""] * max(0, len(headers) - len(row))
+            d = {headers[j]: row[j] for j in range(len(headers))}
 
-        if acct_key not in accounts_map:
-            accounts_map[acct_key] = {
-                "account_id": acct_key,
-                "positions": [], "cash": 0.0, "total_equity": 0.0,
-            }
-        current = accounts_map[acct_key]
+            sym          = d.get("symbol", "").strip().upper()
+            product_type = row[ptype_col].strip().lower() if ptype_col is not None else ""
 
-        # Build row dict using normalized headers
-        row += [""] * max(0, len(headers) - len(row))
-        d = {headers[j]: row[j] for j in range(len(headers))}
+            if not sym or sym == "-" or product_type in _MS_CASH_TYPES:
+                val = clean_num(d.get("market_value", ""))
+                if val is not None:
+                    current["cash"] += val
+                continue
+            if product_type == "other holdings":
+                continue
 
-        sym = d.get("symbol", "").strip().upper()
-        product_type = row[ptype_col].strip().lower() if ptype_col is not None else ""
+            pos = _build_position(d, sym)
+            if pos["shares"] is not None or pos["market_value"] is not None:
+                current["positions"].append(pos)
 
-        # Cash / BDP rows
-        if not sym or sym == "-" or product_type in _MS_CASH_TYPES:
-            val = clean_num(d.get("market_value", ""))
-            if val is not None:
-                current["cash"] += val
-            continue
+        accounts = list(accounts_map.values())
+        for acct in accounts:
+            if acct["total_equity"] == 0.0:
+                acct["total_equity"] = round(
+                    sum(p.get("market_value") or 0 for p in acct["positions"]) + acct["cash"], 2
+                )
+        return accounts
 
-        # Skip non-standard holdings (stock plan unvested, etc.)
-        if product_type == "other holdings":
-            continue
-
-        pos = _build_position(d, sym)
-        if pos["shares"] is not None or pos["market_value"] is not None:
-            current["positions"].append(pos)
-
-    accounts = list(accounts_map.values())
-
-    for acct in accounts:
-        if acct["total_equity"] == 0.0:
-            acct["total_equity"] = round(
-                sum(p.get("market_value") or 0 for p in acct["positions"])
-                + acct["cash"], 2
-            )
-
-    return accounts
+    # ── Fall back to Home Page format ──────────────────────────────────────────
+    print(f"  INFO: {filepath.name} looks like a Home Page export — using summary parser (no cost basis)")
+    return _parse_ms_xlsx_home(ws)
 
 
 # ── Dispatcher ────────────────────────────────────────────────────────────────
