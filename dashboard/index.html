@@ -1004,7 +1004,7 @@ function renderAccounts(accounts) {
       }).join('');
 
     // Build cash / liabilities meta pills
-    const cash = acct.cash || 0;
+    const cash = (acct.cash != null) ? acct.cash : 0;
     const liabilities = acct.liabilities || [];
     const totalLiab = acct.live_liabilities || 0;
     let metaHtml = '';
