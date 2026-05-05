@@ -694,6 +694,11 @@ td.right { text-align: right; }
             <div class="section-subtitle" id="holdings-sub">Loading…</div>
           </div>
           <div style="display:flex;gap:8px;align-items:center;">
+            <button id="clear-acct-filter" onclick="selectAccount(_selectedAccount)" style="
+              display:none;background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.35);
+              color:var(--accent2);padding:4px 10px;border-radius:6px;font-size:.78rem;
+              cursor:pointer;white-space:nowrap;
+            ">✕ All accounts</button>
             <input id="holdings-search" placeholder="Filter…" style="
               background:var(--surface);border:1px solid var(--border2);color:var(--text);
               padding:5px 10px;border-radius:6px;font-size:.8rem;width:120px;
@@ -1071,10 +1076,11 @@ let _selectedAccount = null;
 
 function selectAccount(acctId) {
   _selectedAccount = (_selectedAccount === acctId) ? null : acctId;
-  // Update card selected state
   document.querySelectorAll('.acct-card').forEach(c => {
     c.classList.toggle('selected', c.dataset.accountId === _selectedAccount);
   });
+  const btn = document.getElementById('clear-acct-filter');
+  if (btn) btn.style.display = _selectedAccount ? 'block' : 'none';
   if (_portfolio) renderHoldings(_portfolio.accounts);
 }
 
