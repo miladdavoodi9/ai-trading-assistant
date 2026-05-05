@@ -99,7 +99,7 @@ Results stream live to the page as they generate. When done, you can **export to
 ```bash
 git clone https://github.com/miladdavoodi9/ai-trading-assistant.git
 cd ai-trading-assistant
-pip install fastapi uvicorn anthropic requests
+pip install fastapi uvicorn anthropic requests openpyxl
 ```
 
 ### 2 — Add Your Anthropic API Key

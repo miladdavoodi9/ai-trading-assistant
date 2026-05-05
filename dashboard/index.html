@@ -8,11 +8,11 @@
 /* ── Reset & Base ─────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg:       #1c1c28;
-  --surface:  #23232f;
-  --card:     #2a2a38;
-  --border:   #35354a;
-  --border2:  #44445c;
+  --bg:       #13131c;
+  --surface:  #1a1a24;
+  --card:     #20202e;
+  --border:   #2c2c3e;
+  --border2:  #3a3a52;
   --text:     #dde1f0;
   --muted:    #7c7f9a;
   --dim:      #a8abbe;
@@ -232,6 +232,25 @@ a { color: var(--accent2); text-decoration: none; }
   font-size: .75rem;
   flex-shrink: 0;
 }
+.acct-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: .74rem;
+}
+.acct-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.acct-meta-item b { color: var(--text); font-weight: 600; }
+.acct-meta-item.neg { background: rgba(239,68,68,.12); color: #f87171; }
+.acct-meta-item.neg b { color: #f87171; }
 .acct-strategy-btn {
   background: rgba(99,102,241,.1);
   border: 1px solid rgba(99,102,241,.3);
@@ -816,12 +835,21 @@ td.right { text-align: right; }
         </div>
       </div>
       <!-- Scrollable content: strategy + chat thread -->
-      <div style="flex:1; overflow-y:auto; display:flex; flex-direction:column; min-height:0;">
-        <div id="modal-body" style="
-          padding:22px; flex-shrink:0;
-          font-size:.9rem; line-height:1.8; color:var(--text);
-        "></div>
-        <div id="chat-thread" style="display:none; flex-direction:column; gap:12px; padding:0 22px 16px;"></div>
+      <div style="flex:1; min-height:0; display:flex; flex-direction:column; position:relative;">
+        <div id="modal-scroll" style="flex:1; min-height:0; overflow-y:auto;">
+          <div id="modal-body" style="
+            padding:22px; flex-shrink:0;
+            font-size:.9rem; line-height:1.8; color:var(--text);
+          "></div>
+          <div id="chat-thread" style="display:none; flex-direction:column; gap:12px; padding:0 22px 16px;"></div>
+        </div>
+        <button id="scroll-to-bottom" onclick="modalScrollToBottom()" style="
+          display:none; position:absolute; bottom:12px; right:16px;
+          background:var(--accent); color:#fff; border:none; border-radius:50%;
+          width:32px; height:32px; font-size:1rem; cursor:pointer;
+          box-shadow:0 2px 8px rgba(0,0,0,.3); transition:opacity .15s;
+          line-height:1; z-index:10;
+        " title="Scroll to bottom">↓</button>
       </div>
       <!-- Chat input footer -->
       <div id="chat-footer" style="
@@ -975,6 +1003,22 @@ function renderAccounts(accounts) {
           </div>`;
       }).join('');
 
+    // Build cash / liabilities meta pills
+    const cash = acct.cash || 0;
+    const liabilities = acct.liabilities || [];
+    const totalLiab = acct.live_liabilities || 0;
+    let metaHtml = '';
+    // Cash: if positive show as cash, if negative show as margin debit
+    if (cash > 0) {
+      metaHtml += `<span class="acct-meta-item">Cash <b>${fmt(cash)}</b></span>`;
+    } else if (cash < 0) {
+      metaHtml += `<span class="acct-meta-item neg">Margin Debit <b>${fmt(Math.abs(cash))}</b></span>`;
+    }
+    // Explicit liabilities (e.g. Morgan Stanley LAL)
+    liabilities.forEach(l => {
+      metaHtml += `<span class="acct-meta-item neg">${l.name} <b>${fmt(l.balance)}</b></span>`;
+    });
+
     const card = document.createElement('div');
     card.className = 'acct-card';
     card.dataset.accountId = acct.account_id;
@@ -989,6 +1033,7 @@ function renderAccounts(accounts) {
           ${ldc >= 0 ? '+' : ''}${fmt(ldc)} today
         </div>
       </div>
+      ${metaHtml ? `<div class="acct-meta">${metaHtml}</div>` : ''}
       <div class="acct-holdings">${holdBars}</div>
       <button class="acct-strategy-btn" id="strat-btn-${acct.account_id.replace(/[^a-z0-9]/gi,'-')}" onclick="handleStrategyBtn('${acct.account_id}', this)">
         ${_getCached(acct.account_id) ? '✦ View Strategy' : '✦ Get Account Strategy'}
@@ -1357,7 +1402,29 @@ function renderChatThread() {
         " class="${m.role==='assistant'?'chat-msg-ai':''}">${m.role==='assistant' ? renderMarkdown(m.content) : m.content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
       </div>`).join('')}
   `;
-  thread.scrollTop = thread.scrollHeight;
+  _updateScrollBtn();
+}
+
+function _isNearBottom() {
+  const s = document.getElementById('modal-scroll');
+  if (!s) return true;
+  return s.scrollHeight - s.scrollTop - s.clientHeight < 120;
+}
+
+function _smartScroll() {
+  if (_isNearBottom()) modalScrollToBottom();
+  _updateScrollBtn();
+}
+
+function modalScrollToBottom() {
+  const s = document.getElementById('modal-scroll');
+  if (s) s.scrollTop = s.scrollHeight;
+  _updateScrollBtn();
+}
+
+function _updateScrollBtn() {
+  const btn = document.getElementById('scroll-to-bottom');
+  if (btn) btn.style.display = _isNearBottom() ? 'none' : 'block';
 }
 
 async function sendChatMessage() {
@@ -1368,6 +1435,8 @@ async function sendChatMessage() {
   input.value = '';
   _chatMessages.push({ role: 'user', content: text });
   renderChatThread();
+  // Always scroll down when user sends a message
+  modalScrollToBottom();
 
   const thread   = document.getElementById('chat-thread');
   const strategy = document.getElementById('modal-body').textContent;
@@ -1408,7 +1477,7 @@ async function sendChatMessage() {
         try {
           const { text, error } = JSON.parse(raw);
           if (error) { _chatMessages[idx].content += `\nError: ${error}`; }
-          if (text)  { _chatMessages[idx].content += text; renderChatThread(); }
+          if (text)  { _chatMessages[idx].content += text; renderChatThread(); _smartScroll(); }
         } catch(e) {}
       }
     }
@@ -1452,6 +1521,8 @@ function openStrategyModal(accountId) {
   document.getElementById('strategy-modal').style.display = 'flex';
   document.getElementById('strategy-minimized').style.display = 'none';
   document.body.style.overflow = 'hidden';
+  const s = document.getElementById('modal-scroll');
+  if (s) s.onscroll = _updateScrollBtn;
 }
 
 function minimizeStrategyModal() {
@@ -1527,15 +1598,30 @@ function emailStrategy() {
 }
 
 function renderMarkdown(raw) {
-  return raw
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
-    .replace(/^(#{1,3})\s+(.+)$/gm, (_,h,t) => `<div class="md-h${h.length}">${t}</div>`)
-    .replace(/^(\d+)\.\s+\*\*(.+?)\*\*(.*)$/gm, '<div class="md-section"><span class="md-num">$1.</span> <strong>$2</strong>$3</div>')
-    .replace(/^(\d+)\.\s+(.+)$/gm, '<div class="md-section"><span class="md-num">$1.</span> $2</div>')
-    .replace(/^[-•]\s+(.+)$/gm,'<div class="md-bullet">$1</div>')
-    .replace(/\n{2,}/g,'</p><p>')
-    .replace(/\n/g,'<br>');
+  const lines = raw.split('\n');
+  let html = '';
+  for (const line of lines) {
+    const l = line
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+    if (/^---+$/.test(line)) {
+      html += '<hr style="border:none;border-top:1px solid var(--border);margin:.6rem 0;">';
+    } else if (/^#{1,3}\s/.test(line)) {
+      const lvl = line.match(/^(#+)/)[1].length;
+      html += `<div class="md-h${lvl}">${l.replace(/^#+\s+/,'')}</div>`;
+    } else if (/^\d+\.\s/.test(line)) {
+      const m = l.match(/^(\d+)\.\s+(<strong>(.+?)<\/strong>)?(.*)/);
+      if (m && m[2]) html += `<div class="md-section"><span class="md-num">${m[1]}.</span> ${m[2]}${m[4]}</div>`;
+      else html += `<div class="md-section"><span class="md-num">${l.match(/^\d+/)[0]}.</span> ${l.replace(/^\d+\.\s+/,'')}</div>`;
+    } else if (/^[-•›]\s/.test(line)) {
+      html += `<div class="md-bullet">${l.replace(/^[-•›]\s+/,'')}</div>`;
+    } else if (l.trim() === '') {
+      html += '<div style="height:.5rem"></div>';
+    } else {
+      html += `<div>${l}</div>`;
+    }
+  }
+  return html;
 }
 
 async function loadStrategy(accountId, btn) {
@@ -1568,7 +1654,7 @@ async function loadStrategy(accountId, btn) {
     function flush() {
       rafPending = false;
       body.innerHTML = renderMarkdown(rawText);
-      body.scrollTop = body.scrollHeight;
+      _smartScroll();
     }
 
     while (true) {

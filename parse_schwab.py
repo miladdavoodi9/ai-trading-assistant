@@ -20,10 +20,41 @@ from datetime import datetime
 from pathlib import Path
 
 try:
+    import openpyxl
+    _OPENPYXL_OK = True
+except ImportError:
+    _OPENPYXL_OK = False
+
+try:
     import xlrd
     _XLRD_OK = True
 except ImportError:
     _XLRD_OK = False
+
+
+def _load_sheet(filepath) -> list:
+    """
+    Load the first sheet of an XLSX/XLS file into a list of rows.
+    Each row is a list of raw strings (NOT stripped) so callers can
+    detect leading whitespace (indentation) used by Morgan Stanley exports.
+    Prefers openpyxl (handles modern .xlsx); falls back to xlrd (.xls).
+    """
+    if _OPENPYXL_OK:
+        wb = openpyxl.load_workbook(str(filepath), read_only=True, data_only=True)
+        ws = wb.worksheets[0]
+        rows = []
+        for row in ws.iter_rows(values_only=True):
+            rows.append([str(v) if v is not None else "" for v in row])
+        wb.close()
+        return rows
+    if _XLRD_OK:
+        wb = xlrd.open_workbook(str(filepath))
+        ws = wb.sheet_by_index(0)
+        return [
+            [str(ws.cell_value(i, j)) for j in range(ws.ncols)]
+            for i in range(ws.nrows)
+        ]
+    return []
 
 BASE_DIR    = Path(__file__).parent
 INPUT_DIR   = BASE_DIR / "portfolio" / "input"
@@ -267,7 +298,7 @@ def parse_schwab_csv(filepath, content: str) -> list:
                 accounts.append(current)
             current = {
                 "account_id": extract_schwab_account_id(stripped, filepath),
-                "positions": [], "cash": 0.0, "total_equity": 0.0,
+                "positions": [], "cash": 0.0, "total_equity": 0.0, "liabilities": [],
             }
             headers = None
             continue
@@ -278,7 +309,7 @@ def parse_schwab_csv(filepath, content: str) -> list:
             if current is None:
                 current = {
                     "account_id": extract_schwab_account_id("", filepath),
-                    "positions": [], "cash": 0.0, "total_equity": 0.0,
+                    "positions": [], "cash": 0.0, "total_equity": 0.0, "liabilities": [],
                 }
             continue
 
@@ -386,7 +417,7 @@ def parse_flat_csv(filepath, content: str, brokerage: str) -> list:
         if acct_key not in accounts_map:
             accounts_map[acct_key] = {
                 "account_id": acct_key,
-                "positions": [], "cash": 0.0, "total_equity": 0.0,
+                "positions": [], "cash": 0.0, "total_equity": 0.0, "liabilities": [],
             }
         current = accounts_map[acct_key]
 
@@ -418,7 +449,7 @@ def parse_flat_csv(filepath, content: str, brokerage: str) -> list:
     accounts = list(accounts_map.values())
     if not accounts:
         accounts = [{"account_id": default_id, "positions": [],
-                     "cash": 0.0, "total_equity": 0.0}]
+                     "cash": 0.0, "total_equity": 0.0, "liabilities": []}]
 
     # Fill total_equity if not found in a totals row
     for acct in accounts:
@@ -452,29 +483,43 @@ def _ms_acct_key(raw: str) -> str:
     return f"{base}{suffix}"
 
 
-def _parse_ms_xlsx_home(ws) -> list:
+def _parse_ms_xlsx_home(rows: list) -> list:
     """
     Parse the Morgan Stanley 'Home Page' XLSX export.
     Extracts per-account totals from 'Investment Details' and individual
     securities from 'My Top Holdings', then distributes shares proportionally.
+    Also parses the 'Liabilities' section (e.g. LAL credit lines).
     Cost basis is not available in this export format.
     """
-    accounts_map = {}   # acct_key -> account dict (with temp _stocks_val)
+    accounts_map = {}   # acct_key -> account dict (with temp _stocks_val/_group)
     top_holdings = []   # [{name, symbol, quantity, price, market_value}]
+    # group_name (lowercase) -> list of {name, balance}
+    liabilities_by_group = {}
 
     # ── state machine ──────────────────────────────────────────────────────────
-    NONE, INV_DETAILS, TOP_HOLDINGS = 0, 1, 2
+    NONE, INV_DETAILS, TOP_HOLDINGS, LIABILITIES = 0, 1, 2, 3
     state = NONE
     inv_headers = None
     inv_cols = {}          # col-name -> column index for Investment Details
     th_headers = None      # Top Holdings column names (lowercase)
-    current_group = ""     # tracks group header row (e.g. "Chase") for skip logic
+    liab_headers = None
+    liab_balance_col = None
+    current_group = ""     # tracks group header row for skip/association logic
 
-    for i in range(ws.nrows):
-        row_vals = [str(ws.cell_value(i, j)).strip() for j in range(ws.ncols)]
-        first = row_vals[0]
+    for raw_row in rows:
+        row_vals = [v.strip() for v in raw_row]
+        # Pad to consistent width
+        first = row_vals[0] if row_vals else ""
+        raw_first = raw_row[0] if raw_row else ""  # un-stripped for indentation detection
 
         # ── section transitions ────────────────────────────────────────────────
+        if "liabilities" in first.lower() and "margin" in first.lower():
+            state = LIABILITIES
+            liab_headers = None
+            liab_balance_col = None
+            current_group = ""
+            continue
+
         if "investment details" in first.lower():
             state = INV_DETAILS
             inv_headers = None
@@ -490,7 +535,7 @@ def _parse_ms_xlsx_home(ws) -> list:
         # Other section headers reset state
         if first and not first.startswith(" ") and state != NONE:
             other_sections = {
-                "liabilities", "available funds", "available cash",
+                "available funds", "available cash",
                 "monthly projected", "during non-market", "today's change",
                 "important notice", "additional information", "©",
             }
@@ -498,8 +543,35 @@ def _parse_ms_xlsx_home(ws) -> list:
                 state = NONE
                 continue
 
+        # ── Liabilities section ────────────────────────────────────────────────
+        if state == LIABILITIES:
+            if liab_headers is None:
+                if "group/account" in first.lower():
+                    liab_headers = [v.lower() for v in row_vals]
+                    for ci, h in enumerate(liab_headers):
+                        if "outstanding" in h or ("balance" in h and "liabilit" in h):
+                            liab_balance_col = ci
+                            break
+                continue
+
+            if not any(row_vals):
+                continue
+
+            if not raw_first.startswith(" "):
+                current_group = raw_first.strip().lower()
+                continue
+
+            # Indented = actual liability line item (e.g. LAL-1412)
+            liab_name = raw_first.strip().split("\n")[0].strip()
+            if liab_balance_col is not None and liab_balance_col < len(row_vals):
+                balance = clean_num(row_vals[liab_balance_col])
+                if balance and balance > 0:
+                    liabilities_by_group.setdefault(current_group, []).append(
+                        {"name": liab_name, "balance": balance}
+                    )
+
         # ── Investment Details section ─────────────────────────────────────────
-        if state == INV_DETAILS:
+        elif state == INV_DETAILS:
             if inv_headers is None:
                 # Wait for header row ("Group/Account" in first cell)
                 if "group/account" in first.lower():
@@ -517,8 +589,6 @@ def _parse_ms_xlsx_home(ws) -> list:
 
             if not any(row_vals):
                 continue
-
-            raw_first = str(ws.cell_value(i, 0))
 
             if not raw_first.startswith(" "):
                 # Group-header row (e.g. "Morgan Stanley", "Chase")
@@ -546,6 +616,8 @@ def _parse_ms_xlsx_home(ws) -> list:
                     "cash":         cash_val,
                     "total_equity": round(pos_val + cash_val, 2),
                     "_stocks_val":  stocks_val,
+                    "_group":       current_group,
+                    "liabilities":  [],
                 }
 
         # ── My Top Holdings section ────────────────────────────────────────────
@@ -589,6 +661,7 @@ def _parse_ms_xlsx_home(ws) -> list:
 
     for acct in accounts_map.values():
         acct_stocks = acct.pop("_stocks_val", 0)
+        acct_group  = acct.pop("_group", "")
         prop = (acct_stocks / total_stocks) if total_stocks > 0 else (1.0 / len(accounts_map))
 
         for h in top_holdings:
@@ -608,6 +681,10 @@ def _parse_ms_xlsx_home(ws) -> list:
                 "security_type":            "Stock",
             })
 
+        # Assign liabilities from the same institution group (exact match only)
+        if acct_group in liabilities_by_group:
+            acct["liabilities"] = liabilities_by_group[acct_group]
+
         if acct["total_equity"] == 0.0:
             acct["total_equity"] = round(
                 sum(p.get("market_value") or 0 for p in acct["positions"]) + acct["cash"], 2
@@ -623,34 +700,35 @@ def parse_ms_xlsx(filepath) -> list:
       - Holdings view: has 'Account Number' and 'Symbol' column headers (detailed, with cost basis)
       - Home Page view: has 'Investment Details' and 'My Top Holdings' sections (summary, no cost basis)
     """
-    if not _XLRD_OK:
-        print("  WARNING: xlrd not installed — cannot read XLSX. Run: pip install xlrd==1.2.0")
+    if not _OPENPYXL_OK and not _XLRD_OK:
+        print("  WARNING: no XLSX library installed. Run: pip install openpyxl")
         return []
 
-    wb = xlrd.open_workbook(str(filepath))
-    ws = wb.sheet_by_index(0)
+    rows = _load_sheet(filepath)
+    if not rows:
+        print(f"  WARNING: could not read {filepath.name}")
+        return []
 
     # ── Try Holdings format first ──────────────────────────────────────────────
     header_row_idx = None
-    for i in range(ws.nrows):
-        row = [str(ws.cell_value(i, j)).strip() for j in range(ws.ncols)]
-        if "Account Number" in row and "Symbol" in row:
+    for i, row in enumerate(rows):
+        stripped = [v.strip() for v in row]
+        if "Account Number" in stripped and "Symbol" in stripped:
             header_row_idx = i
             break
 
     if header_row_idx is not None:
-        headers = [normalize_header(str(ws.cell_value(header_row_idx, j)).strip())
-                   for j in range(ws.ncols)]
-        raw_headers = [str(ws.cell_value(header_row_idx, j)).strip().lower()
-                       for j in range(ws.ncols)]
-        acct_col  = raw_headers.index("account number") if "account number" in raw_headers else None
-        inst_col  = raw_headers.index("institution")    if "institution"    in raw_headers else None
-        ptype_col = raw_headers.index("product type")   if "product type"   in raw_headers else None
+        hdr_row   = [v.strip() for v in rows[header_row_idx]]
+        headers   = [normalize_header(h) for h in hdr_row]
+        raw_hdrs  = [h.lower() for h in hdr_row]
+        acct_col  = raw_hdrs.index("account number") if "account number" in raw_hdrs else None
+        inst_col  = raw_hdrs.index("institution")    if "institution"    in raw_hdrs else None
+        ptype_col = raw_hdrs.index("product type")   if "product type"   in raw_hdrs else None
 
         accounts_map = {}
 
-        for i in range(header_row_idx + 1, ws.nrows):
-            row = [str(ws.cell_value(i, j)).strip() for j in range(ws.ncols)]
+        for row_raw in rows[header_row_idx + 1:]:
+            row = [v.strip() for v in row_raw]
             if not any(row):
                 continue
             first = row[0] if row else ""
@@ -658,17 +736,17 @@ def parse_ms_xlsx(filepath) -> list:
                 continue
             if first.lower() in ("total", ""):
                 continue
-            institution = row[inst_col].strip() if inst_col is not None else ""
+            institution = row[inst_col] if inst_col is not None and inst_col < len(row) else ""
             if any(bank in institution.lower() for bank in _MS_SKIP_INSTITUTIONS):
                 continue
 
-            raw_acct  = row[acct_col].strip() if acct_col is not None else "Morgan Stanley"
-            acct_key  = _ms_acct_key(raw_acct)
+            raw_acct = row[acct_col] if acct_col is not None and acct_col < len(row) else "Morgan Stanley"
+            acct_key = _ms_acct_key(raw_acct)
 
             if acct_key not in accounts_map:
                 accounts_map[acct_key] = {
                     "account_id": acct_key,
-                    "positions": [], "cash": 0.0, "total_equity": 0.0,
+                    "positions": [], "cash": 0.0, "total_equity": 0.0, "liabilities": [],
                 }
             current = accounts_map[acct_key]
 
@@ -676,7 +754,7 @@ def parse_ms_xlsx(filepath) -> list:
             d = {headers[j]: row[j] for j in range(len(headers))}
 
             sym          = d.get("symbol", "").strip().upper()
-            product_type = row[ptype_col].strip().lower() if ptype_col is not None else ""
+            product_type = row[ptype_col].strip().lower() if ptype_col is not None and ptype_col < len(row) else ""
 
             if not sym or sym == "-" or product_type in _MS_CASH_TYPES:
                 val = clean_num(d.get("market_value", ""))
@@ -700,7 +778,7 @@ def parse_ms_xlsx(filepath) -> list:
 
     # ── Fall back to Home Page format ──────────────────────────────────────────
     print(f"  INFO: {filepath.name} looks like a Home Page export — using summary parser (no cost basis)")
-    return _parse_ms_xlsx_home(ws)
+    return _parse_ms_xlsx_home(rows)
 
 
 # ── Dispatcher ────────────────────────────────────────────────────────────────
@@ -838,6 +916,8 @@ def main():
     patterns = ["*.csv", "*.CSV", "*.xlsx", "*.XLSX", "*.xls", "*.XLS"]
     for pat in patterns:
         for f in INPUT_DIR.glob(pat):
+            if f.name.startswith("~$"):   # skip Excel temp/lock files
+                continue
             key = f.resolve()
             if key not in seen:
                 seen.add(key)

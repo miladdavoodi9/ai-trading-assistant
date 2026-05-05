@@ -248,11 +248,13 @@ def enrich_portfolio(data: dict) -> dict:
                 })
                 acct_invested += pos.get("market_value") or 0
 
-        cash = acct.get("cash") or 0
-        acct["live_invested"] = round(acct_invested, 2)
-        acct["live_value"]    = round(acct_invested + cash, 2)
+        cash        = acct.get("cash") or 0
+        total_liab  = sum(l.get("balance", 0) for l in acct.get("liabilities", []))
+        acct["live_invested"]   = round(acct_invested, 2)
+        acct["live_liabilities"] = round(total_liab, 2)
+        acct["live_value"]      = round(acct_invested + cash - total_liab, 2)
         acct["live_day_change"] = round(acct_day, 2)
-        grand_value += acct_invested + cash
+        grand_value += acct_invested + cash - total_liab
         grand_day   += acct_day
 
     prev_total = grand_value - grand_day
@@ -536,14 +538,19 @@ def _account_tax_label(account_id: str) -> str:
 
 def build_account_context(account: dict) -> str:
     tax_label = _account_tax_label(account["account_id"])
+    liabilities = account.get("liabilities", [])
+    total_liab  = sum(l.get("balance", 0) for l in liabilities)
     lines = [
         f"Account: {account['account_id']}",
         f"Account Type: {tax_label}",
         f"Total Equity: ${account.get('total_equity', 0):,.2f}",
         f"Cash: ${account.get('cash', 0):,.2f}",
-        "",
-        "POSITIONS:",
     ]
+    if liabilities:
+        lines.append(f"Liabilities: ${total_liab:,.2f} "
+                     f"({', '.join(f\"{l['name']} ${l['balance']:,.2f}\" for l in liabilities)})")
+        lines.append(f"Net Value: ${account.get('total_equity', 0) - total_liab:,.2f}")
+    lines += ["", "POSITIONS:"]
     for p in account["positions"]:
         avg  = p.get("avg_cost_per_share") or 0
         cur  = p.get("price") or 0
