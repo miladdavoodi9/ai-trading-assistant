@@ -480,25 +480,33 @@ td.right { text-align: right; }
 }
 
 /* ── Stock Detail Panel ───────────────────────────────────────── */
+#detail-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  backdrop-filter: blur(2px);
+  z-index: 200;
+}
+#detail-backdrop.open { display: block; }
 #detail-panel {
-  width: 0;
-  min-width: 0;
-  flex-shrink: 0;
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: 400px;
+  max-width: 92vw;
   background: var(--surface);
-  border-left: 0px solid var(--border);
-  overflow: hidden;
-  visibility: hidden;
-  transition: width .3s cubic-bezier(.4,0,.2,1), border-left-width .3s, visibility 0s .3s;
+  border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  z-index: 201;
+  transform: translateX(100%);
+  transition: transform .3s cubic-bezier(.4,0,.2,1);
 }
 #detail-panel.open {
-  width: 380px;
-  min-width: 380px;
-  border-left-width: 1px;
-  overflow-y: auto;
-  visibility: visible;
-  transition: width .3s cubic-bezier(.4,0,.2,1), border-left-width .3s, visibility 0s 0s;
+  transform: translateX(0);
 }
 #detail-close {
   position: sticky;
@@ -782,6 +790,7 @@ td.right { text-align: right; }
     </div>
 
     <!-- ── Detail Panel ──────────────────────────────────── -->
+    <div id="detail-backdrop" onclick="closeDetail()"></div>
     <div id="detail-panel">
       <div id="detail-close">
         <div id="detail-sym">—</div>
@@ -1161,11 +1170,13 @@ function selectStock(sym) {
 
   // Open and populate panel
   document.getElementById('detail-panel').classList.add('open');
+  document.getElementById('detail-backdrop').classList.add('open');
   loadDetail(sym);
 }
 
 function closeDetail() {
   document.getElementById('detail-panel').classList.remove('open');
+  document.getElementById('detail-backdrop').classList.remove('open');
   _detailSym = null;
   document.querySelectorAll('#holdings-body tr').forEach(tr => tr.classList.remove('selected'));
 }
