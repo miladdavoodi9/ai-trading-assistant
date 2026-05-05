@@ -1008,12 +1008,8 @@ function renderAccounts(accounts) {
     const liabilities = acct.liabilities || [];
     const totalLiab = acct.live_liabilities || 0;
     let metaHtml = '';
-    // Cash: show always; negative cash displayed as margin debit
-    if (cash >= 0) {
-      metaHtml += `<span class="acct-meta-item">Cash <b>${fmt(cash)}</b></span>`;
-    } else {
-      metaHtml += `<span class="acct-meta-item neg">Margin Debit <b>${fmt(Math.abs(cash))}</b></span>`;
-    }
+    // Cash: clamp negative to zero for display
+    metaHtml += `<span class="acct-meta-item">Cash <b>${fmt(Math.max(cash, 0))}</b></span>`;
     // Explicit liabilities (e.g. Morgan Stanley LAL)
     liabilities.forEach(l => {
       metaHtml += `<span class="acct-meta-item neg">${l.name} <b>${fmt(l.balance)}</b></span>`;
