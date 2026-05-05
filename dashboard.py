@@ -632,6 +632,57 @@ async def run_account_guidance(account_id: str):
     )
 
 
+@app.post("/api/guidance/{account_id:path}/chat")
+async def chat_guidance(account_id: str, body: dict):
+    data    = load_portfolio()
+    account = next((a for a in data["accounts"] if a["account_id"] == account_id), None)
+    if not account:
+        raise HTTPException(404, f"Account '{account_id}' not found")
+
+    syms   = [p["symbol"] for p in account["positions"]]
+    prices = get_live_prices(syms)
+    for pos in account["positions"]:
+        live = prices.get(pos["symbol"])
+        if live:
+            pos["price"]        = live["price"]
+            pos["market_value"] = round(live["price"] * pos["shares"], 2)
+
+    acct_ctx  = build_account_context(account)
+    cash      = account.get("cash") or 0
+    messages  = body.get("messages", [])
+
+    system = (
+        "You are a sharp, direct financial advisor discussing investment strategy for a specific account. "
+        "You have full context of this account's holdings, tax treatment, cost basis, and available cash. "
+        "Answer only questions related to this account's investment strategy — if asked about unrelated topics, "
+        "redirect the conversation back to the account strategy. "
+        "Always reference specific tickers, prices, and percentages. "
+        f"\n\nACCOUNT CONTEXT:\n{acct_ctx}\nCash: ${cash:,.2f}"
+    )
+
+    async def event_stream():
+        client = _make_client()
+        try:
+            with client.messages.stream(
+                model="claude-sonnet-4-6",
+                max_tokens=1000,
+                system=system,
+                messages=messages,
+            ) as stream:
+                for text in stream.text_stream:
+                    yield f"data: {json.dumps({'text': text})}\n\n"
+                    await asyncio.sleep(0)
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 # ── Static Files ──────────────────────────────────────────────────────────────
 
 @app.get("/")
