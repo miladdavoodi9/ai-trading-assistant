@@ -1,0 +1,8 @@
+{
+  "AAA-1031":              { "display_name": "Morgan Stanley Leverage" },
+  "Stock Plan-3329":       { "display_name": "Morgan Stanley Investment" },
+  "Individual-870":        { "display_name": "Schwab Investment" },
+  "Rollover IRA-708":      { "display_name": "Schwab IRA" },
+  "Individual 401(k)-901": { "display_name": "Schwab 401k" },
+  "Merrill Lynch 401k":    { "display_name": "Merrill Lynch 401k", "exclude_from_holdings": true, "display_notes": [{"name": "Margin", "balance": 50000}] }
+}

@@ -250,8 +250,9 @@ def detect_brokerage(content: str, filename: str = "") -> str:
 # ── Account ID helpers ────────────────────────────────────────────────────────
 
 def _account_suffix(text: str) -> str:
-    """Extract last 4 digits as account suffix, e.g. '-1234'."""
-    m = re.search(r'(\d{3,})', text)
+    """Extract last 4 digits as account suffix, e.g. '-1234'.
+    Skips numbers that are part of words like '401k'."""
+    m = re.search(r'(\d{3,})(?![a-zA-Z])', text)
     return f"-{m.group(1)[-4:]}" if m else ""
 
 
@@ -300,7 +301,7 @@ def parse_schwab_csv(filepath, content: str) -> list:
                 accounts.append(current)
             current = {
                 "account_id": extract_schwab_account_id(stripped, filepath),
-                "positions": [], "cash": 0.0, "total_equity": 0.0, "liabilities": [],
+                "positions": [], "cash": 0.0, "total_equity": 0.0, "liabilities": [], "assets": [],
             }
             headers = None
             continue
@@ -311,7 +312,7 @@ def parse_schwab_csv(filepath, content: str) -> list:
             if current is None:
                 current = {
                     "account_id": extract_schwab_account_id("", filepath),
-                    "positions": [], "cash": 0.0, "total_equity": 0.0, "liabilities": [],
+                    "positions": [], "cash": 0.0, "total_equity": 0.0, "liabilities": [], "assets": [],
                 }
             continue
 
@@ -420,7 +421,7 @@ def parse_flat_csv(filepath, content: str, brokerage: str) -> list:
         if acct_key not in accounts_map:
             accounts_map[acct_key] = {
                 "account_id": acct_key,
-                "positions": [], "cash": 0.0, "total_equity": 0.0, "liabilities": [],
+                "positions": [], "cash": 0.0, "total_equity": 0.0, "liabilities": [], "assets": [],
             }
         current = accounts_map[acct_key]
 
@@ -433,6 +434,24 @@ def parse_flat_csv(filepath, content: str, brokerage: str) -> list:
                 val = clean_num(d.get("market_value", ""))
                 if val is not None:
                     current["cash"] += val
+            continue
+
+        # Manual ASSET rows — named capital that adds to account value (e.g. margin reserve)
+        if sym == "ASSET":
+            amount = (clean_num(d.get("market_value", ""))
+                      or clean_num(d.get("cost_basis", ""))
+                      or 0)
+            name = d.get("name", "Asset").strip() or "Asset"
+            current["assets"].append({"name": name, "balance": amount})
+            continue
+
+        # Manual LIABILITY rows (e.g. margin loan, credit line)
+        if sym == "LIABILITY":
+            amount = (clean_num(d.get("cost_basis", ""))
+                      or clean_num(d.get("market_value", ""))
+                      or 0)
+            name   = d.get("name", "Liability").strip() or "Liability"
+            current["liabilities"].append({"name": name, "balance": amount})
             continue
 
         if any(k in sym.lower() for k in CASH_KEYWORDS):
@@ -452,7 +471,7 @@ def parse_flat_csv(filepath, content: str, brokerage: str) -> list:
     accounts = list(accounts_map.values())
     if not accounts:
         accounts = [{"account_id": default_id, "positions": [],
-                     "cash": 0.0, "total_equity": 0.0, "liabilities": []}]
+                     "cash": 0.0, "total_equity": 0.0, "liabilities": [], "assets": []}]
 
     # Fill total_equity if not found in a totals row
     for acct in accounts:
@@ -696,6 +715,87 @@ def _parse_ms_xlsx_home(rows: list) -> list:
     return list(accounts_map.values())
 
 
+def parse_crypto_xlsx(filepath) -> list:
+    """
+    Parse the crypto_positions.xlsx manual file.
+    First row must contain 'Crypto Portfolio'.
+    Second row: Account, Symbol, Name, Quantity, Cost Basis, Market Value
+    All sub-accounts (Coinbase, Cold Wallet, etc.) are merged into one "Crypto" account.
+    Duplicate symbols are aggregated (summed).
+    """
+    rows = _load_sheet(filepath)
+    if not rows or "crypto portfolio" not in rows[0][0].lower():
+        return []
+
+    # symbol -> aggregated position dict
+    positions_map = {}
+
+    for row in rows[2:]:   # skip identifier + header rows
+        if not any(v.strip() for v in row):
+            continue
+        symbol   = row[1].strip().upper() if len(row) > 1 else ""
+        name     = row[2].strip() if len(row) > 2 else symbol
+        qty_raw  = row[3].strip() if len(row) > 3 else ""
+        cost_raw = row[4].strip() if len(row) > 4 else ""
+        mv_raw   = row[5].strip() if len(row) > 5 else ""
+
+        if not symbol:
+            continue
+
+        qty  = clean_num(qty_raw)
+        cost = clean_num(cost_raw)
+        mv   = clean_num(mv_raw)
+
+        if symbol in positions_map:
+            # Aggregate duplicate symbols (e.g. BTC across Coinbase + Cold Wallet)
+            p = positions_map[symbol]
+            p["shares"]      = round((p["shares"] or 0) + (qty  or 0), 8)
+            p["market_value"]= round((p["market_value"] or 0) + (mv   or 0), 2)
+            if cost is not None:
+                p["cost_basis"] = round((p["cost_basis"] or 0) + cost, 2)
+        else:
+            positions_map[symbol] = {
+                "symbol":     symbol,
+                "name":       name,
+                "shares":     qty,
+                "price":      None,          # filled below
+                "market_value": mv,
+                "cost_basis": cost,
+                "avg_cost_per_share":     None,
+                "unrealized_gain_loss":   None,
+                "unrealized_gain_loss_pct": None,
+                "pct_of_account": None,
+                "asset_class": "crypto",
+            }
+
+    positions = list(positions_map.values())
+
+    # Compute derived fields now that aggregation is complete
+    for p in positions:
+        qty  = p["shares"]
+        mv   = p["market_value"]
+        cost = p["cost_basis"]
+        p["price"] = round(mv / qty, 6) if (mv is not None and qty) else None
+        p["avg_cost_per_share"] = round(cost / qty, 6) if (cost is not None and qty) else None
+        if cost is not None and mv is not None and cost > 0:
+            p["unrealized_gain_loss"]     = round(mv - cost, 2)
+            p["unrealized_gain_loss_pct"] = round((mv - cost) / cost * 100, 2)
+
+    total_mv = sum(p["market_value"] or 0 for p in positions)
+    for p in positions:
+        if total_mv and p["market_value"]:
+            p["pct_of_account"] = round(p["market_value"] / total_mv * 100, 2)
+
+    return [{
+        "account_id":   "Crypto",
+        "asset_class":  "crypto",
+        "positions":    positions,
+        "cash":         0.0,
+        "total_equity": round(total_mv, 2),
+        "liabilities":  [],
+    }]
+
+
 def parse_ms_xlsx(filepath) -> list:
     """
     Parse Morgan Stanley's XLSX export.
@@ -749,7 +849,7 @@ def parse_ms_xlsx(filepath) -> list:
             if acct_key not in accounts_map:
                 accounts_map[acct_key] = {
                     "account_id": acct_key,
-                    "positions": [], "cash": 0.0, "total_equity": 0.0, "liabilities": [],
+                    "positions": [], "cash": 0.0, "total_equity": 0.0, "liabilities": [], "assets": [],
                 }
             current = accounts_map[acct_key]
 
@@ -945,9 +1045,20 @@ def main():
     for portfolio_file in all_files:
         ext = portfolio_file.suffix.lower()
         if ext in (".xlsx", ".xls"):
-            result = parse_ms_xlsx(portfolio_file)
-            broker = "Morgan Stanley"
-            print(f"Parsing (Morgan Stanley XLSX): {portfolio_file.name}  ->  {len(result)} account(s)")
+            # Try crypto format first (detected by first-row identifier)
+            if "crypto" in portfolio_file.name.lower():
+                result = parse_crypto_xlsx(portfolio_file)
+                if result:
+                    broker = "Crypto"
+                    print(f"Parsing (Crypto): {portfolio_file.name}  ->  {len(result)} account(s)")
+                else:
+                    result = parse_ms_xlsx(portfolio_file)
+                    broker = "Morgan Stanley"
+                    print(f"Parsing (Morgan Stanley XLSX): {portfolio_file.name}  ->  {len(result)} account(s)")
+            else:
+                result = parse_ms_xlsx(portfolio_file)
+                broker = "Morgan Stanley"
+                print(f"Parsing (Morgan Stanley XLSX): {portfolio_file.name}  ->  {len(result)} account(s)")
         else:
             result, broker = parse_csv(portfolio_file)
             print(f"Parsing ({broker}): {portfolio_file.name}  ->  {len(result)} account(s)")

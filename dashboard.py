@@ -97,22 +97,37 @@ def _yf_quote_single(sym: str) -> Tuple[str, Optional[Dict]]:
         return sym, None
 
 
+# Common crypto tickers that Yahoo Finance serves as SYMBOL-USD
+_CRYPTO_TICKERS = {
+    'BTC', 'ETH', 'ADA', 'SOL', 'DOGE', 'XRP', 'BNB', 'AVAX',
+    'MATIC', 'DOT', 'LINK', 'LTC', 'UNI', 'ACH',
+}
+
+def _crypto_yf_sym(sym: str) -> str:
+    """Map a crypto symbol to its Yahoo Finance ticker (e.g. BTC -> BTC-USD)."""
+    return sym + '-USD' if sym.upper() in _CRYPTO_TICKERS else sym
+
+
 def _yf_quote(symbols: List[str]) -> Dict:
-    """Batch quote by fetching all symbols concurrently."""
+    """Batch quote by fetching all symbols concurrently.
+    Crypto tickers are looked up as SYMBOL-USD but stored under the original symbol."""
     results = {}
     with ThreadPoolExecutor(max_workers=min(len(symbols), 8)) as ex:
-        futures = {ex.submit(_yf_quote_single, s): s for s in symbols}
+        # Map original symbol -> yahoo ticker
+        sym_map = {s: _crypto_yf_sym(s) for s in symbols}
+        futures = {ex.submit(_yf_quote_single, yf_sym): orig for orig, yf_sym in sym_map.items()}
         for fut in as_completed(futures):
-            sym, data = fut.result()
+            orig = futures[fut]
+            _yf_sym, data = fut.result()
             if data:
-                results[sym] = data
+                results[orig] = data  # store under original symbol (BTC, not BTC-USD)
     return results
 
 
 def _yf_detail(symbol: str) -> dict:
     """Fetch detailed quote summary (v11) for a single ticker."""
     data = _yf_get(
-        f"https://query2.finance.yahoo.com/v11/finance/quoteSummary/{symbol}",
+        f"https://query2.finance.yahoo.com/v11/finance/quoteSummary/{_crypto_yf_sym(symbol)}",
         params={"modules": "summaryDetail,defaultKeyStatistics,assetProfile,recommendationTrend,financialData"},
     )
     out = {}
@@ -153,7 +168,7 @@ def _yf_detail(symbol: str) -> dict:
 def _yf_chart(symbol: str, period: str = "1mo", interval: str = "1d") -> List[Dict]:
     """Fetch OHLCV history as a list of {date, close} dicts."""
     data = _yf_get(
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{_crypto_yf_sym(symbol)}",
         params={"range": period, "interval": interval},
     )
     if not data:
@@ -175,7 +190,7 @@ def _yf_news(symbol: str) -> List[str]:
     """Fetch recent news headlines for a symbol."""
     data = _yf_get(
         "https://query1.finance.yahoo.com/v1/finance/search",
-        params={"q": symbol, "newsCount": 6, "enableFuzzyQuery": False},
+        params={"q": _crypto_yf_sym(symbol), "newsCount": 6, "enableFuzzyQuery": False},
     )
     titles = []
     if data:
@@ -210,14 +225,34 @@ def load_portfolio() -> dict:
     return json.loads(PORTFOLIO_JSON.read_text(encoding="utf-8"))
 
 
+_ALIASES_PATH = BASE_DIR / "portfolio" / "account_aliases.json"
+
+def _load_aliases() -> dict:
+    try:
+        return json.loads(_ALIASES_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
 def enrich_portfolio(data: dict) -> dict:
     symbols = list({p["symbol"] for a in data["accounts"] for p in a["positions"]})
     prices  = get_live_prices(symbols)
+    aliases = _load_aliases()
 
     grand_value = 0.0
     grand_day   = 0.0
 
     for acct in data["accounts"]:
+        # Apply display name and flags from aliases file
+        alias = aliases.get(acct["account_id"], {})
+        acct["display_name"]          = alias.get("display_name", acct["account_id"])
+        acct["exclude_from_holdings"] = alias.get("exclude_from_holdings", False)
+        acct["display_notes"]         = alias.get("display_notes", [])
+        # Normalize liability names (LAL = Leveraged Asset Loan → Margin)
+        for l in acct.get("liabilities", []):
+            if "lal" in l.get("name", "").lower():
+                l["name"] = "Margin"
+
         acct_invested = 0.0
         acct_day      = 0.0
         for pos in acct["positions"]:
@@ -248,13 +283,19 @@ def enrich_portfolio(data: dict) -> dict:
                 })
                 acct_invested += pos.get("market_value") or 0
 
-        cash        = acct.get("cash") or 0
-        total_liab  = sum(l.get("balance", 0) for l in acct.get("liabilities", []))
-        acct["live_invested"]   = round(acct_invested, 2)
+        # Compute live percentage of account for every position
+        for pos in acct["positions"]:
+            lv = pos.get("live_value") or 0
+            pos["live_pct_of_account"] = round(lv / acct_invested * 100, 2) if acct_invested else 0
+
+        cash         = acct.get("cash") or 0
+        total_liab   = sum(l.get("balance", 0) for l in acct.get("liabilities", []))
+        total_assets = sum(a.get("balance", 0) for a in acct.get("assets", []))
+        acct["live_invested"]    = round(acct_invested, 2)
         acct["live_liabilities"] = round(total_liab, 2)
-        acct["live_value"]      = round(acct_invested + cash - total_liab, 2)
-        acct["live_day_change"] = round(acct_day, 2)
-        grand_value += acct_invested + cash - total_liab
+        acct["live_value"]       = round(acct_invested + cash + total_assets - total_liab, 2)
+        acct["live_day_change"]  = round(acct_day, 2)
+        grand_value += acct_invested + cash + total_assets - total_liab
         grand_day   += acct_day
 
     prev_total = grand_value - grand_day
@@ -370,10 +411,18 @@ DISCLAIMER: Educational purposes only. Not financial advice.""",
 
     "fundamental": """You are a Fundamental Analysis specialist.
 
-STOCK DATA:
+ASSET DATA:
 {data}
 
-Deliver comprehensive fundamental analysis covering:
+If the data shows "Asset Class: Cryptocurrency", deliver a crypto-specific fundamental analysis:
+1. Monetary properties (store of value, scarcity, max supply vs circulating supply, inflation rate)
+2. Network security & decentralization (hashrate for PoW, validators/staked % for PoS)
+3. Adoption & on-chain activity (active addresses, transaction volume, layer-2 ecosystem)
+4. Market structure (market cap rank, dominance %, correlation to BTC)
+5. Macro narrative (regulatory environment, ETF flows, institutional adoption)
+6. Verdict: Accumulate / Hold / Reduce — with specific price level rationale
+
+Otherwise, deliver standard equity fundamental analysis:
 1. Valuation (P/E vs sector avg, forward P/E, PEG, EV/EBITDA — is it cheap or expensive?)
 2. Growth profile (revenue growth trend, earnings trajectory)
 3. Profitability (gross/operating/net margins vs industry norms)
@@ -381,7 +430,7 @@ Deliver comprehensive fundamental analysis covering:
 5. Competitive moat (Wide / Narrow / None — with reasoning)
 6. Verdict: Undervalued / Fair Value / Overvalued
 
-Fundamental Score: X/100 with sub-scores (Valuation/Growth/Profitability/Health/Moat, 20 each).
+Fundamental Score: X/100 with 5 sub-scores of 20 each.
 DISCLAIMER: Educational purposes only. Not financial advice.""",
 
     "sentiment": """You are a Sentiment & Momentum Analysis specialist.
@@ -481,8 +530,12 @@ def build_stock_context(symbol: str) -> str:
     price_hist = "\n".join(f"  {d['date']}: ${d['close']}" for d in chart[-8:]) if chart else "  N/A"
     news_lines = "\n".join(f"  - {n}" for n in news) if news else "  No news available"
 
+    is_crypto = sym.upper() in _CRYPTO_TICKERS
+    asset_class_line = "Asset Class: Cryptocurrency — stock-specific metrics (P/E, EPS, dividends) do not apply." if is_crypto else ""
+
     return f"""Symbol: {sym}
-Company: {quote.get('name', sym)}
+Asset: {quote.get('name', sym)}
+{asset_class_line}
 Sector: {detail.get('sector','N/A')} | Industry: {detail.get('industry','N/A')}
 
 PRICE DATA:
@@ -547,8 +600,8 @@ def build_account_context(account: dict) -> str:
         f"Cash: ${account.get('cash', 0):,.2f}",
     ]
     if liabilities:
-        lines.append(f"Liabilities: ${total_liab:,.2f} "
-                     f"({', '.join(f\"{l['name']} ${l['balance']:,.2f}\" for l in liabilities)})")
+        liab_parts = ', '.join(f"{l['name']} ${l['balance']:,.2f}" for l in liabilities)
+        lines.append(f"Liabilities: ${total_liab:,.2f} ({liab_parts})")
         lines.append(f"Net Value: ${account.get('total_equity', 0) - total_liab:,.2f}")
     lines += ["", "POSITIONS:"]
     for p in account["positions"]:
@@ -579,7 +632,7 @@ async def run_stock_agent(agent_type: str, symbol: str):
             with client.messages.stream(
                 model="claude-sonnet-4-6",
                 max_tokens=2000,
-                system="You are an expert AI trading analyst. Provide detailed, data-driven analysis with specific numbers. Always include scores and clear actionable insights.",
+                system="You are an expert AI trading analyst. Provide detailed, data-driven analysis with specific numbers. Always include scores and clear actionable insights. Do NOT use markdown syntax — no asterisks, no pound signs, no backticks. Use plain section headings, numbers, and prose. For tabular data, use a proper markdown table with | separators so it renders as a formatted table.",
                 messages=[{"role": "user", "content": prompt}],
             ) as stream:
                 for text in stream.text_stream:
@@ -622,8 +675,43 @@ async def run_account_guidance(account_id: str):
             with client.messages.stream(
                 model="claude-sonnet-4-6",
                 max_tokens=1500,
-                system="You are a sharp, direct financial advisor who gives specific, actionable guidance. Always reference specific tickers, prices, and percentages.",
+                system="You are a sharp, direct financial advisor who gives specific, actionable guidance. Always reference specific tickers, prices, and percentages. Do NOT use markdown syntax — no asterisks, no pound signs, no backticks. Use plain headings and prose. For tabular data use | pipe tables.",
                 messages=[{"role": "user", "content": prompt}],
+            ) as stream:
+                for text in stream.text_stream:
+                    yield f"data: {json.dumps({'text': text})}\n\n"
+                    await asyncio.sleep(0)
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/api/agent/{agent_type}/{symbol}/chat")
+async def chat_agent(agent_type: str, symbol: str, body: dict):
+    messages = body.get("messages", [])
+    analysis = body.get("analysis", "")
+    system = (
+        f"You are a financial analyst. The user ran a {agent_type} analysis on {symbol} "
+        f"and wants to ask follow-up questions. Here is the original analysis:\n\n{analysis}\n\n"
+        "Answer questions concisely and directly, referencing specific data points from the analysis. "
+        "Stay focused on this stock and analysis — redirect off-topic questions back to it. "
+        "Do NOT use markdown syntax — no asterisks, no pound signs, no backticks. Plain prose only. For tables use | pipe format."
+    )
+
+    async def event_stream():
+        client = _make_client()
+        try:
+            with client.messages.stream(
+                model="claude-sonnet-4-6",
+                max_tokens=1000,
+                system=system,
+                messages=messages,
             ) as stream:
                 for text in stream.text_stream:
                     yield f"data: {json.dumps({'text': text})}\n\n"
@@ -664,6 +752,7 @@ async def chat_guidance(account_id: str, body: dict):
         "Answer only questions related to this account's investment strategy — if asked about unrelated topics, "
         "redirect the conversation back to the account strategy. "
         "Always reference specific tickers, prices, and percentages. "
+        "Do NOT use markdown syntax — no asterisks, no pound signs, no backticks. Plain prose only. For tables use | pipe format. "
         f"\n\nACCOUNT CONTEXT:\n{acct_ctx}\nCash: ${cash:,.2f}"
     )
 
