@@ -2,6 +2,8 @@
 
 > A self-hosted investment dashboard where every screen, every chart, and every data point is a conversation waiting to happen — powered by Claude AI.
 
+**[→ Jump to Setup](#setup)**
+
 ---
 
 ## The Idea
