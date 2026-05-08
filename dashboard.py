@@ -225,7 +225,8 @@ def load_portfolio() -> dict:
     return json.loads(PORTFOLIO_JSON.read_text(encoding="utf-8"))
 
 
-_ALIASES_PATH = BASE_DIR / "portfolio" / "account_aliases.json"
+_ALIASES_PATH    = BASE_DIR / "portfolio" / "account_aliases.json"
+_TAX_LOTS_PATH   = BASE_DIR / "portfolio" / "tax_lots.json"
 
 def _load_aliases() -> dict:
     try:
@@ -233,11 +234,18 @@ def _load_aliases() -> dict:
     except Exception:
         return {}
 
+def _load_tax_lots() -> dict:
+    try:
+        return json.loads(_TAX_LOTS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
 
 def enrich_portfolio(data: dict) -> dict:
-    symbols = list({p["symbol"] for a in data["accounts"] for p in a["positions"]})
-    prices  = get_live_prices(symbols)
-    aliases = _load_aliases()
+    symbols   = list({p["symbol"] for a in data["accounts"] for p in a["positions"]})
+    prices    = get_live_prices(symbols)
+    aliases   = _load_aliases()
+    tax_lots  = _load_tax_lots()
 
     grand_value = 0.0
     grand_day   = 0.0
@@ -253,9 +261,16 @@ def enrich_portfolio(data: dict) -> dict:
             if "lal" in l.get("name", "").lower():
                 l["name"] = "Margin"
 
+        acct_lots = tax_lots.get(acct["account_id"], {})
         acct_invested = 0.0
         acct_day      = 0.0
         for pos in acct["positions"]:
+            # Fill missing cost basis from tax_lots.json
+            lot_data = acct_lots.get(pos["symbol"])
+            if lot_data and not pos.get("cost_basis"):
+                pos["cost_basis"]        = lot_data["total_cost"]
+                pos["avg_cost_per_share"] = lot_data["avg_cost_per_share"]
+                pos["tax_lots"]          = lot_data["lots"]
             live = prices.get(pos["symbol"])
             if live and live.get("price"):
                 lv  = round(live["price"] * pos["shares"], 2)
@@ -513,6 +528,28 @@ DISCLAIMER: Educational purposes only. Not financial advice.""",
 }
 
 
+def _tax_lot_context(sym: str) -> str:
+    """Return tax lot detail string for a symbol if available, else empty string."""
+    tax_lots = _load_tax_lots()
+    for acct_id, positions in tax_lots.items():
+        if sym in positions:
+            data = positions[sym]
+            lots = data.get("lots", [])
+            if not lots:
+                return ""
+            lines = [
+                f"TAX LOT DETAIL ({sym} in account {acct_id}):",
+                f"  Total: {data['total_shares']} shares | Avg cost ${data['avg_cost_per_share']:.2f} | Total cost ${data['total_cost']:,.2f}",
+                f"  All lots are Long Term (held >1 year — qualifies for long-term capital gains rates):",
+            ]
+            for lot in lots:
+                lines.append(
+                    f"  {lot['acquired']}: {lot['shares']} sh @ ${lot['unit_cost']:.2f}/sh (cost ${lot['total_cost']:,.2f})"
+                )
+            return "\n".join(lines)
+    return ""
+
+
 def build_stock_context(symbol: str) -> str:
     sym   = symbol.upper()
     quote = _yf_quote([sym]).get(sym, {})
@@ -575,7 +612,9 @@ RECENT PRICE HISTORY (weekly):
 {price_hist}
 
 RECENT NEWS:
-{news_lines}"""
+{news_lines}
+
+{_tax_lot_context(sym)}"""
 
 
 def _account_tax_label(account_id: str) -> str:
@@ -615,6 +654,13 @@ def build_account_context(account: dict) -> str:
             f"current ${cur:.2f} | G/L {gl:+.1f}% | "
             f"value ${mv:,.0f} | {pct:.1f}% of account"
         )
+        if p.get("tax_lots"):
+            lines.append(f"    Tax Lots (all Long Term):")
+            for lot in p["tax_lots"]:
+                lines.append(
+                    f"      {lot['acquired']}: {lot['shares']} sh @ ${lot['unit_cost']:.2f} "
+                    f"(cost ${lot['total_cost']:,.2f})"
+                )
     return "\n".join(lines)
 
 
