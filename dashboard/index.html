@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI Trading Dashboard</title>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <style>
 /* ── Reset & Base ─────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -453,6 +454,62 @@ td.right { text-align: right; }
   cursor: pointer;
 }
 #ticker-select:focus { outline: 2px solid var(--accent); }
+.agents-ask-row {
+  padding: 0 18px 14px;
+}
+.ask-divider {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  color: var(--muted);
+  font-size: .68rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  margin-bottom: .65rem;
+}
+.ask-divider::before,.ask-divider::after {
+  content:'';flex:1;border-top:1px solid var(--border);
+}
+.ask-input-wrap {
+  display:flex;gap:.45rem;
+}
+.ask-input-wrap input {
+  flex:1;background:var(--surface);border:1px solid var(--border2);
+  color:var(--text);padding:8px 12px;border-radius:7px;
+  font-size:.85rem;outline:none;font-family:inherit;
+}
+.ask-input-wrap input:focus { border-color:var(--accent); }
+.ask-input-wrap input::placeholder { color:var(--muted); }
+.ask-input-wrap button {
+  background:var(--accent);border:none;color:#fff;
+  padding:8px 16px;border-radius:7px;font-size:.85rem;
+  font-weight:700;cursor:pointer;white-space:nowrap;transition:background .15s;
+}
+.ask-input-wrap button:hover { background:var(--accent2); }
+.smart-routing-banner {
+  display:inline-block;font-size:.75rem;font-weight:600;
+  color:var(--accent2);background:rgba(99,102,241,.12);
+  border-radius:20px;padding:4px 14px;margin-bottom:.9rem;
+  letter-spacing:.02em;
+}
+.attach-btn {
+  background:none;border:1px solid var(--border2);color:var(--muted);
+  padding:8px 10px;border-radius:8px;cursor:pointer;font-size:1rem;
+  flex-shrink:0;transition:color .15s,border-color .15s;line-height:1;
+}
+.attach-btn:hover { color:var(--accent2);border-color:var(--accent); }
+.attach-preview {
+  display:flex;align-items:center;gap:10px;padding:7px 10px;
+  background:rgba(99,102,241,.08);border-radius:7px;
+  border:1px solid rgba(99,102,241,.2);margin-bottom:4px;
+}
+.attach-preview img { width:44px;height:44px;object-fit:cover;border-radius:5px; }
+.attach-preview .attach-icon { font-size:1.4rem; }
+.attach-preview .attach-name { font-size:.78rem;color:var(--dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.attach-preview .attach-remove { background:none;border:none;color:var(--muted);cursor:pointer;font-size:.95rem;padding:0 2px; }
+.attach-preview .attach-remove:hover { color:var(--red); }
+.chat-img-thumb { max-width:220px;max-height:160px;border-radius:6px;margin-top:6px;display:block;cursor:pointer; }
+.chat-data-pill { display:inline-block;font-size:.75rem;background:rgba(99,102,241,.12);color:var(--accent2);border-radius:5px;padding:3px 9px;margin-top:4px; }
 .agents-grid {
   padding: 14px 18px;
   display: flex;
@@ -581,46 +638,209 @@ td.right { text-align: right; }
 #detail-backdrop.open { display: block; }
 #detail-panel {
   position: fixed;
-  top: 0;
-  right: 0;
+  top: 0; right: 0;
   height: 100vh;
-  width: 400px;
-  max-width: 92vw;
+  width: 420px;
+  max-width: 94vw;
   background: var(--surface);
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
   z-index: 201;
   transform: translateX(100%);
-  transition: transform .3s cubic-bezier(.4,0,.2,1);
+  transition: transform .3s cubic-bezier(.4,0,.2,1), width .3s cubic-bezier(.4,0,.2,1);
 }
-#detail-panel.open {
-  transform: translateX(0);
-}
+#detail-panel.open { transform: translateX(0); }
+#detail-panel.chat-expanded { width: 75vw; }
 #detail-close {
-  position: sticky;
-  top: 0;
+  flex-shrink: 0;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  padding: 12px 16px;
+  padding: 11px 16px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  z-index: 10;
 }
 #detail-close-btn {
-  background: none;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 1.2rem;
-  padding: 2px 6px;
-  border-radius: 5px;
+  background: none; border: none; color: var(--muted);
+  cursor: pointer; font-size: 1.1rem; padding: 2px 6px; border-radius: 5px;
 }
 #detail-close-btn:hover { background: var(--border); color: var(--text); }
 #detail-sym { font-weight: 700; font-size: 1rem; color: var(--text); }
-#detail-body { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+/* Inner: both columns side-by-side */
+#detail-inner {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+#detail-left {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  min-width: 0;
+}
+/* Right chat column — hidden until expanded */
+#detail-right {
+  flex: 0;
+  width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  transition: flex .3s cubic-bezier(.4,0,.2,1), width .3s cubic-bezier(.4,0,.2,1);
+}
+#detail-panel.chat-expanded #detail-right {
+  flex: 1;
+  width: auto;
+  overflow: visible;
+}
+#detail-panel.chat-expanded #detail-right { overflow: hidden; }
+#detail-right-header {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.detail-chat-ctrl-btn {
+  background: none; border: 1px solid var(--border); color: var(--muted);
+  padding: 2px 8px; border-radius: 5px; cursor: pointer; font-size: .68rem;
+  font-weight: 600; white-space: nowrap; transition: all .12s;
+}
+.detail-chat-ctrl-btn:hover { border-color: var(--accent); color: var(--accent2); }
+.detail-chat-ctrl-btn.exit:hover { border-color: var(--red); color: var(--red); }
+#detail-chat-thread {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+.detail-chat-empty {
+  color: var(--muted); font-size: .8rem; text-align: center;
+  padding: 40px 16px; line-height: 1.65;
+}
+#detail-chat-bar {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  padding: 10px 12px;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* Collapsed chat trigger — shown at bottom when not expanded */
+#detail-chat-trigger {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  padding: 10px 14px;
+  background: var(--surface);
+  cursor: text;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#detail-panel.chat-expanded #detail-chat-trigger { display: none; }
+#detail-trigger-input {
+  flex: 1;
+  background: var(--card);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 8px 11px;
+  border-radius: 7px;
+  font-size: .83rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color .15s;
+}
+#detail-trigger-input:focus { border-color: var(--accent); }
+#detail-trigger-input::placeholder { color: var(--muted); }
+#detail-trigger-send {
+  background: var(--accent); border: none; color: #fff;
+  padding: 8px 14px; border-radius: 7px; font-size: .83rem;
+  font-weight: 700; cursor: pointer; white-space: nowrap; transition: opacity .15s;
+}
+#detail-trigger-send:hover { opacity: .8; }
+#detail-body { padding: 0; display: flex; flex-direction: column; gap: 0; }
+#detail-chart-section { padding: 0; }
+#detail-chart-container { width: 100%; background: var(--surface); transition: opacity .2s; }
+.chart-periods {
+  display: flex;
+  gap: 3px;
+  overflow-x: auto;
+  padding: 8px 12px 6px;
+  scrollbar-width: none;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.chart-periods::-webkit-scrollbar { display: none; }
+.period-btn {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: .7rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all .12s;
+  letter-spacing: .02em;
+}
+.period-btn:hover { border-color: var(--accent); color: var(--accent2); }
+.period-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chart-price-tooltip {
+  font-size: .78rem; font-weight: 700; color: var(--accent2);
+  padding: 4px 12px; text-align: right;
+  min-height: 22px;
+  background: var(--surface);
+}
+#detail-body-inner { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+#chart-stats {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chart-stat-period {
+  font-size: .7rem;
+  color: var(--muted);
+  text-align: center;
+  letter-spacing: .02em;
+}
+.chart-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+}
+.chart-stat-cell {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.csl { font-size: .6rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 700; }
+.csv { font-size: .78rem; font-weight: 700; color: var(--text); }
 
 .detail-price-row {
   display: flex;
@@ -864,6 +1084,13 @@ td.right { text-align: right; }
           <button class="agent-btn" onclick="runAgent('risk')" title="Risk assessment"><span class="icon">🛡</span>Risk</button>
           <button class="agent-btn" onclick="runAgent('thesis')" title="Full investment thesis"><span class="icon">📝</span>Thesis</button>
         </div>
+        <div class="agents-ask-row">
+          <div class="ask-divider"><span>or describe what you're looking for</span></div>
+          <div class="ask-input-wrap">
+            <input id="smart-ask-input" placeholder="e.g. Should I take profits given my cost basis? Is now a good time to add more?" onkeydown="if(event.key==='Enter') runSmartAnalysis()" />
+            <button onclick="runSmartAnalysis()">Ask →</button>
+          </div>
+        </div>
       </div>
 
       <!-- Analysis History -->
@@ -889,10 +1116,54 @@ td.right { text-align: right; }
         <div id="detail-sym">—</div>
         <button id="detail-close-btn" onclick="closeDetail()">✕</button>
       </div>
-      <div id="detail-body">
-        <div style="color:var(--muted);text-align:center;padding:40px 0;">
-          Select a stock to view details
+      <div id="detail-inner">
+        <!-- Left: stock info + chart + stats -->
+        <div id="detail-left">
+          <div id="detail-body">
+            <div style="color:var(--muted);text-align:center;padding:40px 0;">Select a stock to view details</div>
+          </div>
         </div>
+        <!-- Right: chat (hidden until user starts chatting) -->
+        <div id="detail-right">
+          <div id="detail-right-header">
+            <span id="detail-chat-label" style="flex:1;">AI Chat</span>
+            <button class="detail-chat-ctrl-btn" onclick="clearDetailChat()" title="Clear messages">↺ Restart</button>
+            <button class="detail-chat-ctrl-btn exit" onclick="collapseDetailChat()" title="Exit chat">✕ Exit Chat</button>
+          </div>
+          <div id="detail-chat-thread">
+            <div class="detail-chat-empty">Ask anything about this stock — fundamentals, price targets, your holdings, options strategy, risk…</div>
+          </div>
+          <div id="detail-chat-bar">
+            <input type="file" id="detail-file-input" accept="image/*,.csv,.txt,.json" style="display:none" onchange="handleChatFileChange(this,'detail')">
+            <div id="detail-attach-preview" class="attach-preview" style="display:none;">
+              <img id="detail-attach-img" src="" alt="" style="display:none;">
+              <span id="detail-attach-icon" class="attach-icon" style="display:none;">📄</span>
+              <span class="attach-name" id="detail-attach-name"></span>
+              <button class="attach-remove" onclick="removePendingAttach('detail')">✕</button>
+            </div>
+            <div style="display:flex;gap:6px;align-items:flex-end;">
+              <button class="attach-btn" onclick="document.getElementById('detail-file-input').click()" title="Attach image or data">📎</button>
+              <textarea id="detail-chat-input" placeholder="Ask anything about this stock…" rows="2" style="
+                flex:1;background:var(--card);border:1px solid var(--border2);color:var(--text);
+                border-radius:8px;padding:9px 11px;font-size:.83rem;line-height:1.5;resize:none;
+                font-family:inherit;outline:none;transition:border-color .15s;
+              " onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendDetailChat();}"
+                 onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border2)'"></textarea>
+              <button onclick="sendDetailChat()" style="
+                background:var(--accent);border:none;color:#fff;padding:9px 15px;
+                border-radius:8px;cursor:pointer;font-size:.9rem;font-weight:700;
+                white-space:nowrap;transition:opacity .15s;
+              " onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">↑</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Collapsed chat trigger (hidden when chat-expanded) -->
+      <div id="detail-chat-trigger">
+        <span style="font-size:.9rem;">🤖</span>
+        <input id="detail-trigger-input" placeholder="Ask AI about this stock…"
+               onkeydown="if(event.key==='Enter'){_triggerDetailChat();event.preventDefault();}">
+        <button id="detail-trigger-send" onclick="_triggerDetailChat()">Ask →</button>
       </div>
     </div>
   </div>
@@ -919,6 +1190,14 @@ td.right { text-align: right; }
           <div id="modal-subtitle" style="font-size:.75rem;color:var(--muted);margin-top:2px;"></div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
+          <button id="modal-regen-btn" onclick="regenStrategy()" style="
+            display:none; background:var(--surface); border:1px solid var(--border2);
+            color:var(--dim); padding:6px 14px; border-radius:6px; cursor:pointer;
+            font-size:.8rem; font-weight:600; transition:all .15s;
+          " onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent2)';"
+             onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--dim)';">
+            ↺ Regenerate
+          </button>
           <button id="modal-email-btn" onclick="emailStrategy()" style="
             display:none; background:var(--surface); border:1px solid var(--border2);
             color:var(--dim); padding:6px 14px; border-radius:6px; cursor:pointer;
@@ -969,8 +1248,16 @@ td.right { text-align: right; }
         display:none; flex-shrink:0; border-top:1px solid var(--border);
         padding:14px 22px; gap:8px;
       ">
+        <input type="file" id="strategy-file-input" accept="image/*,.csv,.txt,.json" style="display:none" onchange="handleChatFileChange(this,'strategy')">
+        <div id="strategy-attach-preview" class="attach-preview" style="display:none;">
+          <img id="strategy-attach-img" src="" alt="" style="display:none;">
+          <span id="strategy-attach-icon" class="attach-icon" style="display:none;">📄</span>
+          <span class="attach-name" id="strategy-attach-name"></span>
+          <button class="attach-remove" onclick="removePendingAttach('strategy')">✕</button>
+        </div>
         <div style="display:flex; gap:8px; align-items:flex-end;">
-          <textarea id="chat-input" placeholder="Ask a follow-up about this strategy…" rows="2" style="
+          <button class="attach-btn" onclick="document.getElementById('strategy-file-input').click()" title="Attach image or data file">📎</button>
+          <textarea id="chat-input" placeholder="Ask a follow-up, or attach a screenshot / data file…" rows="2" style="
             flex:1; background:var(--surface); border:1px solid var(--border2); color:var(--text);
             border-radius:8px; padding:10px 12px; font-size:.84rem; line-height:1.5; resize:none;
             font-family:inherit; outline:none; transition:border-color .15s;
@@ -1027,8 +1314,16 @@ td.right { text-align: right; }
   </div>
   <!-- Chat footer -->
   <div id="analysis-chat-footer" style="display:none; flex-shrink:0; border-top:1px solid var(--border); padding:14px 22px; flex-direction:column; gap:8px;">
+    <input type="file" id="analysis-file-input" accept="image/*,.csv,.txt,.json" style="display:none" onchange="handleChatFileChange(this,'analysis')">
+    <div id="analysis-attach-preview" class="attach-preview" style="display:none;">
+      <img id="analysis-attach-img" src="" alt="" style="display:none;">
+      <span id="analysis-attach-icon" class="attach-icon" style="display:none;">📄</span>
+      <span class="attach-name" id="analysis-attach-name"></span>
+      <button class="attach-remove" onclick="removePendingAttach('analysis')">✕</button>
+    </div>
     <div style="display:flex; gap:8px; align-items:flex-end;">
-      <textarea id="analysis-chat-input" placeholder="Ask a follow-up about this analysis…" rows="2" style="
+      <button class="attach-btn" onclick="document.getElementById('analysis-file-input').click()" title="Attach image or data file">📎</button>
+      <textarea id="analysis-chat-input" placeholder="Ask a follow-up, or attach a screenshot / data file…" rows="2" style="
         flex:1; background:var(--surface); border:1px solid var(--border2); color:var(--text);
         border-radius:8px; padding:10px 12px; font-size:.84rem; line-height:1.5; resize:none;
         font-family:inherit; outline:none; transition:border-color .15s;
@@ -1473,14 +1768,20 @@ function selectStock(sym) {
 }
 
 function closeDetail() {
-  document.getElementById('detail-panel').classList.remove('open');
+  const panel = document.getElementById('detail-panel');
+  panel.classList.remove('open');
+  panel.classList.remove('chat-expanded');
   document.getElementById('detail-backdrop').classList.remove('open');
   _detailSym = null;
   document.querySelectorAll('#holdings-body tr').forEach(tr => tr.classList.remove('selected'));
+  if (_detailChart) { try { _detailChart.remove(); } catch(_) {} _detailChart = null; _detailSeries = null; }
 }
 
 async function loadDetail(sym) {
   document.getElementById('detail-sym').textContent = sym;
+  const label = document.getElementById('detail-chat-label');
+  if (label) label.textContent = `Ask about ${sym}`;
+  renderDetailChatThread(); // show existing history or placeholder
   const body = document.getElementById('detail-body');
   body.innerHTML = `<div style="text-align:center;padding:40px;color:var(--muted);"><span class="loading-spinner"></span> Loading ${sym}…</div>`;
 
@@ -1491,6 +1792,163 @@ async function loadDetail(sym) {
   } catch(e) {
     body.innerHTML = `<div style="color:var(--red);padding:20px;">${e.message}</div>`;
   }
+}
+
+/* ── Chart state ─────────────────────────────────────────────────── */
+let _detailChart   = null;
+let _detailSeries  = null;
+let _activeChartPeriod = '1y';
+
+async function loadDetailChart(sym, period) {
+  _activeChartPeriod = period;
+
+  // Update period button states
+  document.querySelectorAll('.period-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.period === period);
+  });
+
+  const container = document.getElementById('detail-chart-container');
+  const tooltip   = document.getElementById('chart-hover-price');
+  if (!container) return;
+
+  container.style.opacity = '0.4';
+
+  try {
+    const res  = await fetch(`/api/chart/${encodeURIComponent(sym)}?period=${period}`);
+    const json = await res.json();
+    const data = (json.data || []);
+    const intraday = period === '1wk' || period === '3d';
+
+    // Create chart if needed (or if container was re-rendered)
+    if (!_detailChart || !container.querySelector('canvas')) {
+      if (_detailChart) { try { _detailChart.remove(); } catch(_) {} _detailChart = null; _detailSeries = null; }
+
+      _detailChart = LightweightCharts.createChart(container, {
+        width:  container.offsetWidth,
+        height: 200,
+        layout: { background: {type:'solid', color:'transparent'}, textColor: '#7c7f9a', fontSize: 11 },
+        grid:   { vertLines: {color:'#1e1e2e'}, horzLines: {color:'#1e1e2e'} },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+        rightPriceScale: { borderColor: '#2c2c3e', scaleMargins: {top:0.08, bottom:0.08} },
+        timeScale: { borderColor: '#2c2c3e', timeVisible: intraday, fixLeftEdge: true, fixRightEdge: true },
+        handleScroll: { mouseWheel: false, pressedMouseMove: false },
+        handleScale: { mouseWheel: false, pinch: false },
+      });
+
+      _detailSeries = _detailChart.addAreaSeries({
+        lineColor: '#6366f1',
+        topColor:  'rgba(99,102,241,.22)',
+        bottomColor: 'rgba(99,102,241,.01)',
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: true,
+        crosshairMarkerRadius: 4,
+        crosshairMarkerBorderColor: '#6366f1',
+        crosshairMarkerBackgroundColor: '#818cf8',
+      });
+
+      // Hover tooltip
+      _detailChart.subscribeCrosshairMove(param => {
+        if (!tooltip) return;
+        if (!param.point || !param.seriesData.size) { tooltip.innerHTML = '&nbsp;'; return; }
+        const val = param.seriesData.get(_detailSeries);
+        if (val) tooltip.textContent = `$${val.value.toFixed(2)}`;
+      });
+    } else {
+      // Update intraday setting on existing chart
+      _detailChart.applyOptions({ timeScale: { timeVisible: intraday } });
+    }
+
+    if (data.length) {
+      _detailSeries.setData(data);
+      _detailChart.timeScale().fitContent();
+      renderChartStats(computeChartStats(data, period));
+    } else {
+      const s = document.getElementById('chart-stats');
+      if (s) s.innerHTML = '<div class="chart-stat-period">No data available for this period</div>';
+    }
+  } catch(e) {
+    console.error('Chart load error:', e);
+  }
+
+  container.style.opacity = '1';
+}
+
+function _fmtChartDate(t) {
+  if (typeof t === 'number') {
+    return new Date(t * 1000).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+  }
+  const [y, m, d] = t.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+}
+
+function computeChartStats(data, period) {
+  if (!data || data.length < 2) return null;
+  const vals   = data.map(d => d.value);
+  const open   = vals[0];
+  const close  = vals[vals.length - 1];
+  const high   = Math.max(...vals);
+  const low    = Math.min(...vals);
+  const chgPct = (close - open) / open * 100;
+  const chgAbs = close - open;
+  const rangePct = (high - low) / low * 100;
+
+  // Best and worst single candle move
+  let bestPct = -Infinity, worstPct = Infinity;
+  let bestAbs = -Infinity, worstAbs = Infinity;
+  for (let i = 1; i < vals.length; i++) {
+    const p = (vals[i] - vals[i-1]) / vals[i-1] * 100;
+    const a = vals[i] - vals[i-1];
+    if (p > bestPct)  { bestPct  = p;  bestAbs  = a; }
+    if (p < worstPct) { worstPct = p;  worstAbs = a; }
+  }
+
+  // Count up/down candles
+  let upDays = 0, downDays = 0;
+  for (let i = 1; i < vals.length; i++) {
+    if (vals[i] > vals[i-1]) upDays++;
+    else if (vals[i] < vals[i-1]) downDays++;
+  }
+
+  return {
+    startDate: _fmtChartDate(data[0].time),
+    endDate:   _fmtChartDate(data[data.length - 1].time),
+    open, close, high, low,
+    chgPct, chgAbs, rangePct,
+    bestPct, worstPct, bestAbs, worstAbs,
+    upDays, downDays, total: vals.length - 1,
+  };
+}
+
+function renderChartStats(s) {
+  const el = document.getElementById('chart-stats');
+  if (!el || !s) return;
+
+  const p   = (v, force) => `${v > 0 ? '+' : ''}${v.toFixed(2)}%`;
+  const pr  = v => `$${Math.abs(v) >= 1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(2)}`;
+  const cls = v => v >= 0 ? 'color:var(--green)' : 'color:var(--red)';
+
+  const cell = (label, value, style='') =>
+    `<div class="chart-stat-cell"><div class="csl">${label}</div><div class="csv" style="${style}">${value}</div></div>`;
+
+  el.innerHTML = `
+    <div class="chart-stat-period">${s.startDate} &rarr; ${s.endDate}</div>
+    <div class="chart-stat-grid">
+      ${cell('Open',    pr(s.open))}
+      ${cell('High',    pr(s.high),    'color:var(--green)')}
+      ${cell('Low',     pr(s.low),     'color:var(--red)')}
+      ${cell('Close',   pr(s.close))}
+      ${cell('Change',  p(s.chgPct),   cls(s.chgPct))}
+      ${cell('$ Chg',   (s.chgAbs>=0?'+':'')+pr(s.chgAbs), cls(s.chgAbs))}
+      ${cell('H-L Range', p(s.rangePct, false).replace('+',''))}
+      ${cell('Up/Down', `${s.upDays}↑ ${s.downDays}↓`, s.upDays >= s.downDays ? 'color:var(--green)' : 'color:var(--red)')}
+      ${cell('Best',    p(s.bestPct),  'color:var(--green)')}
+      ${cell('Worst',   p(s.worstPct), 'color:var(--red)')}
+      ${cell('Best $',  (s.bestAbs>=0?'+':'')+pr(s.bestAbs), 'color:var(--green)')}
+      ${cell('Worst $', (s.worstAbs>=0?'+':'')+pr(s.worstAbs), 'color:var(--red)')}
+    </div>
+  `;
 }
 
 function kvRow(label, value) {
@@ -1571,50 +2029,61 @@ function renderDetail(d) {
     ? `<div class="detail-section"><div class="detail-section-title">${title}</div>${rows}</div>`
     : '';
 
+  const PERIODS = [
+    {key:'max',label:'All'},{key:'10y',label:'10Y'},{key:'5y',label:'5Y'},
+    {key:'3y',label:'3Y'},{key:'2y',label:'2Y'},{key:'1y',label:'1Y'},
+    {key:'6mo',label:'6M'},{key:'3mo',label:'3M'},{key:'1mo',label:'1M'},
+    {key:'3wk',label:'3W'},{key:'1wk',label:'1W'},{key:'3d',label:'3D'},
+  ];
+
   body.innerHTML = `
-    <div class="detail-price-row">
-      <div id="detail-price">${fmt(curPrice)}</div>
+    <div id="detail-chart-section">
+      <div class="chart-price-tooltip" id="chart-hover-price">&nbsp;</div>
+      <div id="detail-chart-container" style="height:200px;"></div>
+      <div class="chart-periods">
+        ${PERIODS.map(p => `<button class="period-btn${p.key===_activeChartPeriod?' active':''}" data-period="${p.key}" onclick="loadDetailChart('${sym}','${p.key}')">${p.label}</button>`).join('')}
+      </div>
     </div>
 
-    ${d.description ? `<div style="font-size:.78rem;color:var(--muted);line-height:1.55;">${d.description}…</div>` : ''}
+    <div id="chart-stats"><div class="chart-stat-period" style="color:var(--muted);padding:8px 0;">Loading stats…</div></div>
 
-    ${d.sparkline?.length ? `
-    <div class="sparkline-wrap">
-      <canvas id="sparkline-canvas"></canvas>
-    </div>` : ''}
+    <div id="detail-body-inner">
+      <div class="detail-price-row">
+        <div id="detail-price">${fmt(curPrice)}</div>
+      </div>
 
-    ${detailSection('Valuation', valuationRows)}
-    ${detailSection('Price Range', rangeRows)}
-    ${detailSection('Analyst', analystRows)}
+      ${d.description ? `<div style="font-size:.78rem;color:var(--muted);line-height:1.55;">${d.description}…</div>` : ''}
 
-    <div class="detail-section">
-      <div class="detail-section-title">My Holdings</div>
-      ${holdingRows || '<div style="color:var(--muted);font-size:.8rem;">Not held</div>'}
-    </div>
+      ${detailSection('Valuation', valuationRows)}
+      ${detailSection('Price Range', rangeRows)}
+      ${detailSection('Analyst', analystRows)}
 
-    <div class="detail-section">
-      <div class="detail-section-title">Recent News</div>
-      ${newsHtml}
-    </div>
+      <div class="detail-section">
+        <div class="detail-section-title">My Holdings</div>
+        ${holdingRows || '<div style="color:var(--muted);font-size:.8rem;">Not held</div>'}
+      </div>
 
-    <div style="display:flex;flex-direction:column;gap:6px;padding-top:4px;">
-      <div style="font-size:.72rem;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">Quick Actions</div>
-      ${['quick','technical','fundamental','sentiment','options','risk','thesis'].map(a => `
-        <button onclick="runAgentFor('${a}','${sym}')" style="
-          background:var(--card);border:1px solid var(--border2);color:var(--dim);
-          padding:7px 12px;border-radius:6px;cursor:pointer;font-size:.78rem;font-weight:600;
-          text-align:left;transition:all .15s;
-        " onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent2)';"
-           onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--dim)';">
-          ${agentIcon(a)} Run ${a.charAt(0).toUpperCase()+a.slice(1)} Analysis
-        </button>`).join('')}
+      <div class="detail-section">
+        <div class="detail-section-title">Recent News</div>
+        ${newsHtml}
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:6px;padding-top:4px;">
+        <div style="font-size:.72rem;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">Quick Actions</div>
+        ${['quick','technical','fundamental','sentiment','options','risk','thesis'].map(a => `
+          <button onclick="runAgentFor('${a}','${sym}')" style="
+            background:var(--card);border:1px solid var(--border2);color:var(--dim);
+            padding:7px 12px;border-radius:6px;cursor:pointer;font-size:.78rem;font-weight:600;
+            text-align:left;transition:all .15s;
+          " onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent2)';"
+             onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--dim)';">
+            ${agentIcon(a)} Run ${a.charAt(0).toUpperCase()+a.slice(1)} Analysis
+          </button>`).join('')}
+      </div>
     </div>
   `;
 
-  // Draw sparkline
-  if (d.sparkline?.length) {
-    setTimeout(() => drawSparkline(d.sparkline), 50);
-  }
+  setTimeout(() => loadDetailChart(sym, _activeChartPeriod), 50);
 }
 
 /* ── Sparkline ──────────────────────────────────────────────────── */
@@ -1723,6 +2192,111 @@ function clearHistory() {
 }
 
 /* ── Analysis Chat ──────────────────────────────────────────────── */
+/* ── Attachment state ─────────────────────────────────────────────── */
+let _pendingAttachAnalysis = null; // {base64, mimeType, previewUrl, name, isImage} or {textContent, name}
+let _pendingAttachStrategy = null;
+let _pendingAttachDetail   = null;
+
+function handleChatFileChange(input, which) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+  const isImage = file.type.startsWith('image/');
+  const reader  = new FileReader();
+  if (isImage) {
+    reader.onload = e => {
+      const dataUrl  = e.target.result;
+      const base64   = dataUrl.split(',')[1];
+      const mimeType = file.type || 'image/jpeg';
+      _setPendingAttach(which, {base64, mimeType, previewUrl: dataUrl, name: file.name, isImage: true});
+    };
+    reader.readAsDataURL(file);
+  } else {
+    reader.onload = e => {
+      _setPendingAttach(which, {textContent: e.target.result, name: file.name, isImage: false});
+    };
+    reader.readAsText(file);
+  }
+}
+
+function _setPendingAttach(which, attach) {
+  const prefix = which === 'analysis' ? 'analysis' : which === 'detail' ? 'detail' : 'strategy';
+  if (which === 'analysis')      _pendingAttachAnalysis = attach;
+  else if (which === 'detail')   _pendingAttachDetail   = attach;
+  else                           _pendingAttachStrategy = attach;
+  const preview  = document.getElementById(`${prefix}-attach-preview`);
+  const imgEl    = document.getElementById(`${prefix}-attach-img`);
+  const iconEl   = document.getElementById(`${prefix}-attach-icon`);
+  const nameEl   = document.getElementById(`${prefix}-attach-name`);
+  preview.style.display = 'flex';
+  nameEl.textContent = attach.name;
+  if (attach.isImage) {
+    imgEl.src = attach.previewUrl; imgEl.style.display = 'block';
+    iconEl.style.display = 'none';
+  } else {
+    imgEl.style.display = 'none'; iconEl.style.display = 'block';
+  }
+}
+
+function removePendingAttach(which) {
+  const prefix = which === 'analysis' ? 'analysis' : which === 'detail' ? 'detail' : 'strategy';
+  if (which === 'analysis')      _pendingAttachAnalysis = null;
+  else if (which === 'detail')   _pendingAttachDetail   = null;
+  else                           _pendingAttachStrategy = null;
+  document.getElementById(`${prefix}-attach-preview`).style.display = 'none';
+  document.getElementById(`${prefix}-attach-img`).src = '';
+}
+
+// Paste image from clipboard into either textarea
+function _initPasteHandlers() {
+  [['analysis-chat-input','analysis'],['chat-input','strategy'],['detail-chat-input','detail']].forEach(([id, which]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('paste', ev => {
+      const items = ev.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          ev.preventDefault();
+          const file = item.getAsFile();
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = e => {
+            const dataUrl  = e.target.result;
+            const base64   = dataUrl.split(',')[1];
+            _setPendingAttach(which, {base64, mimeType: item.type, previewUrl: dataUrl, name: 'pasted-image.png', isImage: true});
+          };
+          reader.readAsDataURL(file);
+          break;
+        }
+      }
+    });
+  });
+}
+
+function _buildUserContent(text, attach) {
+  if (!attach) return text || '';
+  const blocks = [];
+  if (attach.isImage) {
+    blocks.push({type:'image', source:{type:'base64', media_type: attach.mimeType, data: attach.base64}});
+    if (text) blocks.push({type:'text', text});
+    else blocks.push({type:'text', text:'What does this show?'});
+  } else {
+    const combined = text
+      ? `${text}\n\nAttached data (${attach.name}):\n\`\`\`\n${attach.textContent.slice(0,8000)}\n\`\`\``
+      : `Here is the attached data (${attach.name}):\n\`\`\`\n${attach.textContent.slice(0,8000)}\n\`\`\``;
+    blocks.push({type:'text', text: combined});
+  }
+  return blocks;
+}
+
+function _renderUserMsg(m) {
+  const displayText = (m._text || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const imgHtml  = m._previewUrl ? `<img class="chat-img-thumb" src="${m._previewUrl}" onclick="window.open(this.src)">` : '';
+  const dataHtml = m._dataName  ? `<div class="chat-data-pill">📄 ${m._dataName}</div>` : '';
+  return (displayText ? `<div style="white-space:pre-wrap">${displayText}</div>` : '') + imgHtml + dataHtml;
+}
+
 function renderAnalysisChatThread() {
   const thread = document.getElementById('analysis-chat-thread');
   if (!_analysisChatMessages.length) { thread.style.display = 'none'; return; }
@@ -1735,23 +2309,30 @@ function renderAnalysisChatThread() {
       <div style="display:flex; flex-direction:column; gap:2px; align-items:${m.role==='user'?'flex-end':'flex-start'};">
         <div style="
           max-width:85%; padding:10px 14px; border-radius:10px; font-size:.84rem; line-height:1.65;
-          white-space:pre-wrap;
           ${m.role==='user'
             ? 'background:rgba(99,102,241,.12); color:var(--text); border:1px solid rgba(99,102,241,.3);'
             : 'background:var(--card); color:var(--dim); border:1px solid var(--border);'}
-        ">${m.role==='assistant' ? renderMarkdown(m.content) : m.content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+        ">${m.role==='assistant' ? renderMarkdown(m.content) : _renderUserMsg(m)}</div>
       </div>`).join('')}
   `;
   _analysisSmartScroll();
 }
 
 async function sendAnalysisChatMessage() {
-  const input = document.getElementById('analysis-chat-input');
-  const text  = input.value.trim();
-  if (!text) return;
+  const input  = document.getElementById('analysis-chat-input');
+  const text   = input.value.trim();
+  const attach = _pendingAttachAnalysis;
+  if (!text && !attach) return;
 
   input.value = '';
-  _analysisChatMessages.push({ role: 'user', content: text });
+  removePendingAttach('analysis');
+  const apiContent = _buildUserContent(text, attach);
+  _analysisChatMessages.push({
+    role: 'user', content: apiContent,
+    _text: text,
+    _previewUrl: attach?.isImage  ? attach.previewUrl : null,
+    _dataName:   attach && !attach.isImage ? attach.name : null,
+  });
   renderAnalysisChatThread();
 
   const analysis  = _analysisCurrent?.rawText  || '';
@@ -1821,6 +2402,157 @@ function clearAnalysisChat() {
   renderAnalysisChatThread();
 }
 
+/* ── Detail Panel Chat ───────────────────────────────────────────── */
+const _detailChatHistory = {}; // keyed by symbol
+
+function _expandDetailChat() {
+  document.getElementById('detail-panel').classList.add('chat-expanded');
+  setTimeout(() => {
+    const inp = document.getElementById('detail-chat-input');
+    if (inp) inp.focus();
+    // Resize chart to new container width
+    if (_detailChart) {
+      const c = document.getElementById('detail-chart-container');
+      if (c) _detailChart.applyOptions({ width: c.offsetWidth });
+    }
+  }, 310);
+}
+
+function collapseDetailChat() {
+  document.getElementById('detail-panel').classList.remove('chat-expanded');
+  setTimeout(() => {
+    if (_detailChart) {
+      const c = document.getElementById('detail-chart-container');
+      if (c) _detailChart.applyOptions({ width: c.offsetWidth });
+    }
+  }, 310);
+}
+
+function _triggerDetailChat() {
+  const triggerInput = document.getElementById('detail-trigger-input');
+  const text = (triggerInput?.value || '').trim();
+  _expandDetailChat();
+  if (text) {
+    triggerInput.value = '';
+    setTimeout(() => {
+      const inp = document.getElementById('detail-chat-input');
+      if (inp) { inp.value = text; sendDetailChat(); }
+    }, 320);
+  }
+}
+
+function clearDetailChat() {
+  const sym = _detailSym;
+  if (sym) _detailChatHistory[sym] = [];
+  renderDetailChatThread();
+}
+
+function renderDetailChatThread() {
+  const thread = document.getElementById('detail-chat-thread');
+  if (!thread) return;
+  const sym  = _detailSym;
+  const msgs = sym ? (_detailChatHistory[sym] || []) : [];
+  if (!msgs.length) {
+    thread.innerHTML = `<div class="detail-chat-empty">Ask anything about this stock — fundamentals, price targets, your holdings, options strategy, risk…</div>`;
+    return;
+  }
+  thread.innerHTML = msgs.map(m => {
+    if (m.role === 'user') {
+      return `<div style="display:flex;justify-content:flex-end;">
+        <div style="max-width:88%;background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.3);border-radius:10px;padding:8px 12px;font-size:.82rem;color:var(--text);">${_renderUserMsg(m)}</div>
+      </div>`;
+    } else {
+      const badge = m._agent ? `<div style="font-size:.63rem;color:var(--muted);margin-bottom:3px;font-weight:700;letter-spacing:.04em;">${agentIcon(m._agent)} ${_AGENT_LABEL_MAP[m._agent] || m._agent}</div>` : '';
+      const body  = m.content ? renderMarkdown(m.content) : '<span style="color:var(--muted);">…</span>';
+      return `<div style="display:flex;flex-direction:column;gap:0;">
+        <div style="max-width:98%;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:.82rem;color:var(--dim);">${badge}${body}</div>
+      </div>`;
+    }
+  }).join('');
+  thread.scrollTop = thread.scrollHeight;
+}
+
+async function sendDetailChat() {
+  const sym    = _detailSym;
+  if (!sym) return;
+  const input  = document.getElementById('detail-chat-input');
+  const text   = (input.value || '').trim();
+  const attach = _pendingAttachDetail;
+  if (!text && !attach) return;
+
+  // Auto-expand to two-column when first message is sent
+  if (!document.getElementById('detail-panel').classList.contains('chat-expanded')) {
+    _expandDetailChat();
+  }
+
+  input.value = '';
+  removePendingAttach('detail');
+
+  if (!_detailChatHistory[sym]) _detailChatHistory[sym] = [];
+
+  const apiContent = _buildUserContent(text, attach);
+  _detailChatHistory[sym].push({
+    role: 'user', content: apiContent, _text: text,
+    _previewUrl: attach?.isImage ? attach.previewUrl : null,
+    _dataName:   attach && !attach.isImage ? attach.name : null,
+  });
+  renderDetailChatThread();
+
+  // Placeholder assistant message
+  _detailChatHistory[sym].push({ role: 'assistant', content: '', _agent: null });
+  const idx = _detailChatHistory[sym].length - 1;
+  renderDetailChatThread();
+
+  // Build history for API (prior turns only, no empty placeholder)
+  const history = _detailChatHistory[sym].slice(0, -1).map(m => ({ role: m.role, content: m.content }));
+
+  try {
+    const res = await fetch(`/api/stock/${encodeURIComponent(sym)}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: text, content: apiContent, history }),
+    });
+
+    if (!res.ok) {
+      _detailChatHistory[sym][idx].content = `Error ${res.status} — check server logs.`;
+      renderDetailChatThread();
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const dec    = new TextDecoder();
+    let   buf    = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const raw = line.slice(6).trim();
+        if (raw === '[DONE]') break;
+        try {
+          const msg = JSON.parse(raw);
+          if (msg.type === 'agent') {
+            _detailChatHistory[sym][idx]._agent = msg.agent;
+          } else if (msg.type === 'text' && msg.text) {
+            _detailChatHistory[sym][idx].content += msg.text;
+          }
+          renderDetailChatThread();
+        } catch(_) {}
+      }
+    }
+    if (!_detailChatHistory[sym][idx].content) {
+      _detailChatHistory[sym][idx].content = '(no response — check ANTHROPIC_API_KEY)';
+      renderDetailChatThread();
+    }
+  } catch(e) {
+    _detailChatHistory[sym][idx].content = `Error: ${e.message}`;
+    renderDetailChatThread();
+  }
+}
+
 function renderChatThread() {
   const thread = document.getElementById('chat-thread');
   if (!_chatMessages.length) { thread.style.display = 'none'; return; }
@@ -1833,11 +2565,11 @@ function renderChatThread() {
       <div style="display:flex; flex-direction:column; gap:2px; align-items:${m.role==='user'?'flex-end':'flex-start'};">
         <div style="
           max-width:85%; padding:10px 14px; border-radius:10px; font-size:.84rem; line-height:1.65;
-          white-space:pre-wrap; font-family:'SF Mono','Fira Code',Consolas,monospace;
+          font-family:'SF Mono','Fira Code',Consolas,monospace;
           ${m.role==='user'
             ? 'background:rgba(99,102,241,.12); color:var(--text); border:1px solid rgba(99,102,241,.3);'
             : 'background:var(--surface); color:var(--dim); border:1px solid var(--border);'}
-        " class="${m.role==='assistant'?'chat-msg-ai':''}">${m.role==='assistant' ? renderMarkdown(m.content) : m.content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+        " class="${m.role==='assistant'?'chat-msg-ai':''}">${m.role==='assistant' ? renderMarkdown(m.content) : _renderUserMsg(m)}</div>
       </div>`).join('')}
   `;
   _updateScrollBtn();
@@ -1879,12 +2611,20 @@ function _updateScrollBtn() {
 }
 
 async function sendChatMessage() {
-  const input = document.getElementById('chat-input');
-  const text  = input.value.trim();
-  if (!text) return;
+  const input  = document.getElementById('chat-input');
+  const text   = input.value.trim();
+  const attach = _pendingAttachStrategy;
+  if (!text && !attach) return;
 
   input.value = '';
-  _chatMessages.push({ role: 'user', content: text });
+  removePendingAttach('strategy');
+  const apiContent = _buildUserContent(text, attach);
+  _chatMessages.push({
+    role: 'user', content: apiContent,
+    _text: text,
+    _previewUrl: attach?.isImage  ? attach.previewUrl : null,
+    _dataName:   attach && !attach.isImage ? attach.name : null,
+  });
   renderChatThread();
   // Always scroll down when user sends a message
   modalScrollToBottom();
@@ -1950,11 +2690,22 @@ function _showChatFooter() {
   f.style.flexDirection = 'column';
 }
 
+function regenStrategy() {
+  const accountId = _strategyAccountId;
+  if (!accountId) return;
+  document.getElementById('modal-regen-btn').style.display = 'none';
+  document.getElementById('modal-email-btn').style.display = 'none';
+  document.getElementById('modal-export-btn').style.display = 'none';
+  const cardBtn = document.getElementById('strat-btn-' + accountId.replace(/[^a-z0-9]/gi,'-'));
+  loadStrategy(accountId, cardBtn);
+}
+
 function handleStrategyBtn(accountId, btn) {
   const cached = _getCached(accountId);
   if (cached) {
     openStrategyModal(accountId);
     document.getElementById('modal-body').innerHTML = renderMarkdown(cached);
+    document.getElementById('modal-regen-btn').style.display = 'inline-block';
     document.getElementById('modal-email-btn').style.display = 'inline-block';
     document.getElementById('modal-export-btn').style.display = 'inline-block';
     _chatMessages = _getChatHistory(accountId) || [];
@@ -2091,7 +2842,9 @@ function renderMarkdown(raw) {
 
     // ── Normal lines ─────────────────────────────────────────────
     const l = inline(line);
-    if (/^---+$/.test(line)) {
+    if (/^Running:/.test(line)) {
+      html += `<div class="smart-routing-banner">${esc(line)}</div>`;
+    } else if (/^---+$/.test(line)) {
       html += '<hr style="border:none;border-top:1px solid var(--border);margin:.6rem 0;">';
     } else if (/^#{1,3}\s/.test(line)) {
       const lvl = line.match(/^(#+)/)[1].length;
@@ -2119,6 +2872,7 @@ async function loadStrategy(accountId, btn) {
   body.innerHTML = '<div style="color:var(--muted);padding:12px 0;">Generating strategy…</div>';
   document.getElementById('chat-thread').style.display = 'none';
   document.getElementById('chat-footer').style.display = 'none';
+  document.getElementById('modal-regen-btn').style.display = 'none';
   document.getElementById('modal-email-btn').style.display = 'none';
   document.getElementById('modal-export-btn').style.display = 'none';
   _chatMessages = [];
@@ -2282,7 +3036,7 @@ function reopenAnalysis(id) {
 
 /* ── Agent Runner ───────────────────────────────────────────────── */
 function agentIcon(type) {
-  const icons = {quick:'⚡',technical:'📊',fundamental:'🏗',sentiment:'🎯',options:'📈',risk:'🛡',thesis:'📝',guidance:'🧭'};
+  const icons = {quick:'⚡',technical:'📊',fundamental:'🏗',sentiment:'🎯',options:'📈',risk:'🛡',thesis:'📝',guidance:'🧭',smart:'🤖'};
   return icons[type] || '🤖';
 }
 
@@ -2368,6 +3122,97 @@ async function runAgent(agentType) {
   };
 }
 
+const _AGENT_LABEL_MAP = {
+  quick:'Quick Snapshot', technical:'Technical Analysis', fundamental:'Fundamental Analysis',
+  sentiment:'Sentiment & Momentum', options:'Options Strategies', risk:'Risk Assessment', thesis:'Investment Thesis'
+};
+
+async function runSmartAnalysis() {
+  const sym = _selectedTicker;
+  if (!sym) { alert('Please select a stock first.'); return; }
+  const input = document.getElementById('smart-ask-input');
+  const question = (input.value || '').trim();
+  if (!question) { input.focus(); return; }
+  if (_analysisAbort) { _analysisAbort.close(); _analysisAbort = null; }
+
+  document.getElementById('analysis-backdrop').classList.add('open');
+  document.getElementById('analysis-modal').classList.add('open');
+  const company = _getCompanyName(sym);
+  document.getElementById('analysis-modal-title').textContent =
+    `🤖 ${sym}${company ? ' — ' + company : ''} — Smart Analysis`;
+
+  const body = document.getElementById('analysis-modal-body');
+  body.innerHTML = '<div style="color:var(--muted);padding:20px 0;">Routing your question…</div>';
+  _analysisChatMessages = [];
+  renderAnalysisChatThread();
+  document.getElementById('analysis-chat-footer').style.display = 'none';
+  _analysisCurrent = { agentType: 'smart', symbol: sym, rawText: '', chatMessages: [] };
+  document.querySelectorAll('.agent-btn').forEach(b => b.disabled = true);
+
+  const url = `/api/analyze/ask?symbol=${encodeURIComponent(sym)}&question=${encodeURIComponent(question)}`;
+  const es = new EventSource(url);
+  _analysisAbort = es;
+  let rafPending = false;
+
+  function flush() {
+    rafPending = false;
+    if (!_analysisCurrent) return;
+    const scrollSaves = [...body.querySelectorAll('.md-table-wrap')].map(el => el.scrollLeft);
+    body.innerHTML = renderMarkdown(_analysisCurrent.rawText);
+    body.querySelectorAll('.md-table-wrap').forEach((el, idx) => {
+      if (scrollSaves[idx] != null) el.scrollLeft = scrollSaves[idx];
+    });
+    _analysisSmartScroll();
+  }
+
+  es.onmessage = ev => {
+    if (ev.data === '[DONE]') {
+      es.close(); _analysisAbort = null;
+      document.querySelectorAll('.agent-btn').forEach(b => b.disabled = false);
+      if (_analysisCurrent && _analysisCurrent.rawText.trim().length > 20) {
+        _addToHistory({
+          id: Date.now(), agentType: 'smart', symbol: sym,
+          date: new Date().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}),
+          content: _analysisCurrent.rawText, chatMessages: [],
+        });
+      }
+      document.getElementById('analysis-chat-footer').style.display = 'flex';
+      if (!rafPending) { rafPending = true; requestAnimationFrame(flush); }
+      return;
+    }
+    try {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === 'routing') {
+        const labels = msg.agents.map(a => _AGENT_LABEL_MAP[a] || a).join(' | ');
+        _analysisCurrent.rawText = `Running: ${labels}\n\n`;
+        if (!rafPending) { rafPending = true; requestAnimationFrame(flush); }
+      } else if (msg.type === 'agent_start') {
+        const label = _AGENT_LABEL_MAP[msg.agent] || msg.agent;
+        if (_analysisCurrent.rawText.trim()) _analysisCurrent.rawText += '\n\n---\n\n';
+        _analysisCurrent.rawText += `## ${label}\n\n`;
+        if (!rafPending) { rafPending = true; requestAnimationFrame(flush); }
+      } else if (msg.type === 'synthesis_start') {
+        _analysisCurrent.rawText += '\n\n---\n\n## Answer to Your Question\n\n';
+        if (!rafPending) { rafPending = true; requestAnimationFrame(flush); }
+      } else if (msg.type === 'text' && msg.text) {
+        _analysisCurrent.rawText += msg.text;
+        if (!rafPending) { rafPending = true; requestAnimationFrame(flush); }
+      } else if (msg.error) {
+        _analysisCurrent.rawText += `\nError: ${msg.error}`;
+        es.close();
+        document.querySelectorAll('.agent-btn').forEach(b => b.disabled = false);
+      }
+    } catch(_) {}
+  };
+
+  es.onerror = () => {
+    es.close(); _analysisAbort = null;
+    document.querySelectorAll('.agent-btn').forEach(b => b.disabled = false);
+    if (_analysisCurrent && !_analysisCurrent.rawText.trim())
+      body.innerHTML = '<div style="color:#f87171">Connection error. Check ANTHROPIC_API_KEY.</div>';
+  };
+}
+
 function downloadAgentOutput() {
   const title  = document.getElementById('agent-output-title').textContent.trim();
   const text   = document.getElementById('agent-output').textContent;
@@ -2424,6 +3269,7 @@ setInterval(async () => {
 loadPortfolio();
 renderHistoryList();
 initSortHeaders();
+_initPasteHandlers();
 </script>
 </body>
 </html>

@@ -334,6 +334,39 @@ def api_debug():
     }
 
 
+# ── Shared conversation memory (cross-agent context) ──────────────────────────
+# Stores the last N user messages + agent responses so every agent has context
+# of what the user has been exploring across the whole session.
+_SHARED_CONTEXT: list[dict] = []   # [{role, content, agent, symbol}]
+_SHARED_CTX_MAX = 20               # keep last 20 turns
+
+def _append_shared_context(role: str, content, agent: str = "", symbol: str = ""):
+    _SHARED_CONTEXT.append({"role": role, "content": content, "agent": agent, "symbol": symbol})
+    if len(_SHARED_CONTEXT) > _SHARED_CTX_MAX:
+        _SHARED_CONTEXT.pop(0)
+
+def _build_shared_ctx_summary() -> str:
+    """Return a concise summary of recent cross-agent conversation for injection."""
+    if not _SHARED_CONTEXT:
+        return ""
+    lines = ["RECENT CONVERSATION CONTEXT (user's broader session — for continuity):"]
+    for item in _SHARED_CONTEXT[-12:]:
+        tag = f"[{item['symbol']} / {item['agent']}]" if item.get("symbol") else ""
+        role_label = "User" if item["role"] == "user" else f"AI {tag}"
+        content = item["content"]
+        if isinstance(content, list):
+            # Vision content — extract text portions
+            content = " ".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+        lines.append(f"  {role_label}: {str(content)[:300]}")
+    return "\n".join(lines)
+
+
+@app.post("/api/context/clear")
+def clear_shared_context():
+    _SHARED_CONTEXT.clear()
+    return {"ok": True}
+
+
 @app.get("/api/portfolio")
 def api_portfolio():
     return enrich_portfolio(load_portfolio())
@@ -344,6 +377,62 @@ def api_prices():
     data    = load_portfolio()
     symbols = list({p["symbol"] for a in data["accounts"] for p in a["positions"]})
     return get_live_prices(symbols)
+
+
+@app.get("/api/chart/{symbol}")
+def api_chart(symbol: str, period: str = "1y"):
+    import time as _time
+    from datetime import timedelta
+
+    # (yf_range, interval, intraday)
+    PERIODS: dict = {
+        "max": ("max", "1mo",  False),
+        "10y": ("10y", "1wk",  False),
+        "5y":  ("5y",  "1wk",  False),
+        "3y":  ("5y",  "1d",   False),
+        "2y":  ("2y",  "1d",   False),
+        "1y":  ("1y",  "1d",   False),
+        "6mo": ("6mo", "1d",   False),
+        "3mo": ("3mo", "1d",   False),
+        "1mo": ("1mo", "1d",   False),
+        "3wk": ("1mo", "1d",   False),
+        "1wk": ("5d",  "60m",  True),
+        "3d":  ("5d",  "60m",  True),
+    }
+    yf_range, interval, intraday = PERIODS.get(period, ("1y", "1d", False))
+
+    raw = _yf_get(
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{_crypto_yf_sym(symbol)}",
+        params={"range": yf_range, "interval": interval},
+    )
+
+    out = []
+    if raw:
+        try:
+            result     = raw["chart"]["result"][0]
+            timestamps = result.get("timestamp", [])
+            closes     = result["indicators"]["quote"][0].get("close", [])
+            for ts, c in zip(timestamps, closes):
+                if c is None:
+                    continue
+                # Intraday → Unix timestamp; daily → ISO date string
+                t = ts if intraday else str(date.fromtimestamp(ts))
+                out.append({"time": t, "value": round(c, 4)})
+        except Exception:
+            pass
+
+    # Trim derived-range periods
+    if period == "3y":
+        cutoff = (date.today() - timedelta(days=365 * 3)).isoformat()
+        out = [p for p in out if isinstance(p["time"], str) and p["time"] >= cutoff]
+    elif period == "3wk":
+        cutoff = (date.today() - timedelta(weeks=3)).isoformat()
+        out = [p for p in out if isinstance(p["time"], str) and p["time"] >= cutoff]
+    elif period == "3d":
+        cutoff_ts = int(_time.time()) - 3 * 86400
+        out = [p for p in out if isinstance(p["time"], int) and p["time"] >= cutoff_ts]
+
+    return {"symbol": symbol.upper(), "period": period, "data": out}
 
 
 @app.get("/api/stock/{symbol}")
@@ -664,6 +753,221 @@ def build_account_context(account: dict) -> str:
     return "\n".join(lines)
 
 
+AGENT_LABELS = {
+    "quick":       "Quick Snapshot",
+    "technical":   "Technical Analysis",
+    "fundamental": "Fundamental Analysis",
+    "sentiment":   "Sentiment & Momentum",
+    "options":     "Options Strategies",
+    "risk":        "Risk Assessment",
+    "thesis":      "Investment Thesis",
+}
+
+ROUTER_PROMPT = """You are a routing agent. Given a user question about a stock, decide which 1-3 specialist agents are most relevant.
+
+Available agents:
+- quick: General overview, price action, key stats, signal
+- technical: Chart patterns, RSI, MACD, support/resistance levels
+- fundamental: Earnings, revenue, margins, valuation multiples (P/E, EV/EBITDA)
+- sentiment: News sentiment, momentum, social buzz, analyst consensus
+- options: Options strategies, implied volatility, calls/puts
+- risk: Downside risk, volatility, position sizing, portfolio risk
+- thesis: Full investment thesis, long-term bull/bear case
+
+User question: {question}
+Stock: {symbol}
+
+Respond ONLY with valid JSON — no explanation, no markdown: {{"agents": ["agent1", "agent2"], "reasoning": "one sentence why these agents"}}
+Be selective: pick 1-3 agents that best match the question."""
+
+
+@app.post("/api/stock/{symbol}/chat")
+async def stock_chat(symbol: str, body: dict):
+    sym      = symbol.upper()
+    question = body.get("question", "") or ""
+    content  = body.get("content")        # may be string or list (vision)
+    history  = body.get("history", [])    # [{role, content}]
+
+    client = _make_client()
+
+    # Route question to best agent type
+    try:
+        router_resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=150,
+            messages=[{"role": "user", "content": ROUTER_PROMPT.format(
+                symbol=sym, question=question or "Give me a general overview"
+            )}],
+        )
+        import re as _re2
+        raw  = router_resp.content[0].text.strip()
+        m    = _re2.search(r'\{.*\}', raw, _re2.DOTALL)
+        routing = json.loads(m.group()) if m else {}
+    except Exception:
+        routing = {}
+
+    chosen     = [a for a in routing.get("agents", []) if a in AGENT_PROMPTS]
+    agent_type = chosen[0] if chosen else "quick"
+
+    # Stock context
+    stock_ctx = build_stock_context(sym)
+
+    # User's holdings in this symbol
+    try:
+        portfolio = load_portfolio()
+        tax_lots  = _load_tax_lots()
+        holdings_lines = []
+        for acct in portfolio["accounts"]:
+            for pos in acct["positions"]:
+                if pos["symbol"] == sym:
+                    avg  = pos.get("avg_cost_per_share") or 0
+                    mv   = pos.get("market_value") or 0
+                    lots = tax_lots.get(acct["account_id"], {}).get(sym)
+                    cost = lots["total_cost"] if lots else (pos.get("cost_basis") or 0)
+                    holdings_lines.append(
+                        f"  {acct['account_id']}: {pos['shares']} sh, "
+                        f"avg cost ${avg:.2f}, market value ${mv:,.2f}, cost basis ${cost:,.2f}"
+                    )
+        holdings_ctx = "\n".join(holdings_lines)
+    except Exception:
+        holdings_ctx = ""
+
+    shared_ctx = _build_shared_ctx_summary()
+    system = (
+        f"You are an expert financial analyst specializing in {AGENT_LABELS.get(agent_type, agent_type)} analysis. "
+        f"The user is asking about {sym}. Respond conversationally and directly — answer what was asked. "
+        "Reference actual numbers from the data. Keep responses concise but thorough.\n\n"
+        f"STOCK DATA:\n{stock_ctx}"
+        + (f"\n\nUSER'S HOLDINGS IN {sym}:\n{holdings_ctx}" if holdings_ctx else "")
+        + (f"\n\n{shared_ctx}" if shared_ctx else "")
+        + "\n\nDo NOT use markdown syntax — no asterisks, pound signs, or backticks. "
+        "Plain prose only. For tables use | pipe format."
+    )
+
+    # Record to shared context
+    _append_shared_context("user", content or question, agent=agent_type, symbol=sym)
+
+    # Build API messages
+    api_messages = list(history) + [{"role": "user", "content": content or question}]
+
+    full_response: list[str] = []
+
+    async def event_stream():
+        yield f"data: {json.dumps({'type': 'agent', 'agent': agent_type})}\n\n"
+        try:
+            with client.messages.stream(
+                model="claude-sonnet-4-6",
+                max_tokens=800,
+                system=system,
+                messages=api_messages,
+            ) as stream:
+                for chunk in stream.text_stream:
+                    full_response.append(chunk)
+                    yield f"data: {json.dumps({'type': 'text', 'text': chunk})}\n\n"
+                    await asyncio.sleep(0)
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'text', 'text': f'Error: {e}'})}\n\n"
+        _append_shared_context("assistant", "".join(full_response), agent=agent_type, symbol=sym)
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/api/analyze/ask")
+async def smart_analyze(symbol: str, question: str):
+    stock_ctx = build_stock_context(symbol)
+    client    = _make_client()
+
+    # Phase 1: Route (fast sync call)
+    try:
+        router_resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=200,
+            messages=[{"role": "user", "content": ROUTER_PROMPT.format(symbol=symbol, question=question)}],
+        )
+        import re as _re
+        raw = router_resp.content[0].text.strip()
+        m   = _re.search(r'\{.*\}', raw, _re.DOTALL)
+        routing = json.loads(m.group()) if m else {}
+    except Exception:
+        routing = {}
+
+    chosen    = [a for a in routing.get("agents", []) if a in AGENT_PROMPTS]
+    if not chosen:
+        chosen = ["quick"]
+    reasoning = routing.get("reasoning", "")
+
+    async def event_stream():
+        yield f"data: {json.dumps({'type': 'routing', 'agents': chosen, 'reasoning': reasoning})}\n\n"
+
+        agent_texts: dict = {}
+        for agent_type in chosen:
+            yield f"data: {json.dumps({'type': 'agent_start', 'agent': agent_type})}\n\n"
+            prompt   = AGENT_PROMPTS[agent_type].replace("{data}", stock_ctx)
+            text_buf = ""
+            try:
+                with client.messages.stream(
+                    model="claude-sonnet-4-6",
+                    max_tokens=1500,
+                    system=(
+                        "You are an expert AI trading analyst. Provide detailed, data-driven analysis. "
+                        "Do NOT use markdown syntax — no asterisks, no pound signs, no backticks. "
+                        "Use plain prose and numbers. For tables use | pipe format."
+                    ),
+                    messages=[{"role": "user", "content": prompt}],
+                ) as stream:
+                    for chunk in stream.text_stream:
+                        text_buf += chunk
+                        yield f"data: {json.dumps({'type': 'text', 'agent': agent_type, 'text': chunk})}\n\n"
+                        await asyncio.sleep(0)
+            except Exception as e:
+                err_msg = f"Error running {agent_type}: {e}"
+                yield f"data: {json.dumps({'type': 'text', 'agent': agent_type, 'text': err_msg})}\n\n"
+                text_buf = err_msg
+            agent_texts[agent_type] = text_buf
+
+        # Phase 3: Synthesis when multiple agents ran
+        if len(chosen) > 1:
+            synthesis_ctx = "\n\n".join(
+                f"=== {AGENT_LABELS.get(a, a).upper()} ===\n{t}"
+                for a, t in agent_texts.items()
+            )
+            synthesis_prompt = (
+                f"The user asked about {symbol}: \"{question}\"\n\n"
+                f"Based on the analyses below, answer the user's specific question directly and concisely. "
+                f"Do not repeat all the analysis — synthesize only what's relevant to what was asked.\n\n"
+                f"{synthesis_ctx}"
+            )
+            yield f"data: {json.dumps({'type': 'synthesis_start'})}\n\n"
+            try:
+                with client.messages.stream(
+                    model="claude-sonnet-4-6",
+                    max_tokens=600,
+                    system=(
+                        "You are a financial advisor synthesizing analysis to answer a specific question. "
+                        "Be direct and concise. Do NOT use markdown — plain prose only."
+                    ),
+                    messages=[{"role": "user", "content": synthesis_prompt}],
+                ) as stream:
+                    for chunk in stream.text_stream:
+                        yield f"data: {json.dumps({'type': 'text', 'agent': 'synthesis', 'text': chunk})}\n\n"
+                        await asyncio.sleep(0)
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'text', 'agent': 'synthesis', 'text': f'Error: {e}'})}\n\n"
+
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.get("/api/agent/{agent_type}/{symbol}")
 async def run_stock_agent(agent_type: str, symbol: str):
     if agent_type not in AGENT_PROMPTS:
@@ -702,14 +1006,20 @@ async def run_account_guidance(account_id: str):
     if not account:
         raise HTTPException(404, f"Account '{account_id}' not found")
 
-    # Refresh prices on positions
-    syms   = [p["symbol"] for p in account["positions"]]
-    prices = get_live_prices(syms)
+    # Refresh prices and apply tax lots
+    syms     = [p["symbol"] for p in account["positions"]]
+    prices   = get_live_prices(syms)
+    tax_lots = _load_tax_lots().get(account_id, {})
     for pos in account["positions"]:
         live = prices.get(pos["symbol"])
         if live:
             pos["price"]        = live["price"]
             pos["market_value"] = round(live["price"] * pos["shares"], 2)
+        lot_data = tax_lots.get(pos["symbol"])
+        if lot_data and not pos.get("cost_basis"):
+            pos["cost_basis"]         = lot_data["total_cost"]
+            pos["avg_cost_per_share"] = lot_data["avg_cost_per_share"]
+            pos["tax_lots"]           = lot_data["lots"]
 
     acct_ctx = build_account_context(account)
     cash     = account.get("cash") or 0
@@ -742,13 +1052,22 @@ async def run_account_guidance(account_id: str):
 async def chat_agent(agent_type: str, symbol: str, body: dict):
     messages = body.get("messages", [])
     analysis = body.get("analysis", "")
+    shared_ctx = _build_shared_ctx_summary()
     system = (
         f"You are a financial analyst. The user ran a {agent_type} analysis on {symbol} "
         f"and wants to ask follow-up questions. Here is the original analysis:\n\n{analysis}\n\n"
         "Answer questions concisely and directly, referencing specific data points from the analysis. "
         "Stay focused on this stock and analysis — redirect off-topic questions back to it. "
         "Do NOT use markdown syntax — no asterisks, no pound signs, no backticks. Plain prose only. For tables use | pipe format."
+        + (f"\n\n{shared_ctx}" if shared_ctx else "")
     )
+
+    # Record last user message to shared context
+    last_user = next((m for m in reversed(messages) if m["role"] == "user"), None)
+    if last_user:
+        _append_shared_context("user", last_user["content"], agent=agent_type, symbol=symbol)
+
+    full_resp: list[str] = []
 
     async def event_stream():
         client = _make_client()
@@ -760,10 +1079,12 @@ async def chat_agent(agent_type: str, symbol: str, body: dict):
                 messages=messages,
             ) as stream:
                 for text in stream.text_stream:
+                    full_resp.append(text)
                     yield f"data: {json.dumps({'text': text})}\n\n"
                     await asyncio.sleep(0)
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        _append_shared_context("assistant", "".join(full_resp), agent=agent_type, symbol=symbol)
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(
@@ -780,6 +1101,15 @@ async def chat_guidance(account_id: str, body: dict):
     if not account:
         raise HTTPException(404, f"Account '{account_id}' not found")
 
+    # Apply tax lots so cost basis is populated
+    tax_lots = _load_tax_lots().get(account_id, {})
+    for pos in account["positions"]:
+        lot_data = tax_lots.get(pos["symbol"])
+        if lot_data and not pos.get("cost_basis"):
+            pos["cost_basis"]        = lot_data["total_cost"]
+            pos["avg_cost_per_share"] = lot_data["avg_cost_per_share"]
+            pos["tax_lots"]          = lot_data["lots"]
+
     syms   = [p["symbol"] for p in account["positions"]]
     prices = get_live_prices(syms)
     for pos in account["positions"]:
@@ -788,9 +1118,10 @@ async def chat_guidance(account_id: str, body: dict):
             pos["price"]        = live["price"]
             pos["market_value"] = round(live["price"] * pos["shares"], 2)
 
-    acct_ctx  = build_account_context(account)
-    cash      = account.get("cash") or 0
-    messages  = body.get("messages", [])
+    acct_ctx   = build_account_context(account)
+    cash       = account.get("cash") or 0
+    messages   = body.get("messages", [])
+    shared_ctx = _build_shared_ctx_summary()
 
     system = (
         "You are a sharp, direct financial advisor discussing investment strategy for a specific account. "
@@ -800,7 +1131,14 @@ async def chat_guidance(account_id: str, body: dict):
         "Always reference specific tickers, prices, and percentages. "
         "Do NOT use markdown syntax — no asterisks, no pound signs, no backticks. Plain prose only. For tables use | pipe format. "
         f"\n\nACCOUNT CONTEXT:\n{acct_ctx}\nCash: ${cash:,.2f}"
+        + (f"\n\n{shared_ctx}" if shared_ctx else "")
     )
+
+    last_user = next((m for m in reversed(messages) if m["role"] == "user"), None)
+    if last_user:
+        _append_shared_context("user", last_user["content"], agent="guidance", symbol=account_id)
+
+    full_resp2: list[str] = []
 
     async def event_stream():
         client = _make_client()
@@ -812,10 +1150,12 @@ async def chat_guidance(account_id: str, body: dict):
                 messages=messages,
             ) as stream:
                 for text in stream.text_stream:
+                    full_resp2.append(text)
                     yield f"data: {json.dumps({'text': text})}\n\n"
                     await asyncio.sleep(0)
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        _append_shared_context("assistant", "".join(full_resp2), agent="guidance", symbol=account_id)
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(

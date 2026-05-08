@@ -1,100 +1,174 @@
-# AI Trading Assistant & Researcher
+# AI Trading Assistant
 
-> A personal, self-hosted investment dashboard that knows your actual portfolio and helps you make smarter decisions — powered by AI.
-
----
-
-## Documentation
-
-- [Business Requirements Document (BRD)](docs/BRD.md)
-- [Product Requirements Document (PRD)](docs/PRD.md)
+> A self-hosted investment dashboard where every screen, every chart, and every data point is a conversation waiting to happen — powered by Claude AI.
 
 ---
 
-## Coming Soon
+## The Idea
 
-### 🪙 Crypto Tab — Coinbase Integration
-A dedicated **Crypto** tab alongside Stocks. Connect to Coinbase to pull live BTC, ETH, and altcoin balances, cost basis, and P&L. Cold wallet balances (hardware wallets) can be entered manually and looked up via public blockchain — all consolidated into a single net worth view.
+Most financial dashboards show you data. This one talks back.
 
-**Planned:**
-- Coinbase OAuth / API key connection
-- Manual cold wallet address entry with live on-chain balance lookup
-- Crypto-specific AI agents: on-chain sentiment, fear & greed index, whale activity, DeFi yield
-- Unified net worth bar: Stocks + Crypto in one number
+The core of this project isn't the portfolio tracker or the live prices — it's the interface. Every surface in the dashboard is an AI entry point. You can ask questions about a stock the moment you click it. You can describe what you're trying to understand and let the system figure out which analyst to route you to. You can paste a screenshot of a chart and ask what it means. The AI isn't a feature bolted on — it's the layer between you and your data.
 
 ---
 
-### 🌐 Remote Access — Use It From Anywhere
-Access the dashboard from your MacBook, phone, or any device — even when traveling.
+## The Dashboard Interface
 
-**Planned:**
-- Local network access (same Wi-Fi as your PC)
-- Secure remote tunnel via ngrok or Cloudflare for access on the road
-- Optional password protection
-- QR code at startup for instant mobile access
-
----
-
-## What This Is
-
-A private trading research dashboard that runs entirely on your own computer. It reads your real brokerage portfolio from **Schwab, E-Trade, Fidelity, or Morgan Stanley**, tracks your positions with live prices, and lets you run AI-powered analysis on any stock — all through a clean browser-based interface.
-
-This is a **research tool**. It does not execute trades, manage money, or connect to your brokerage. You stay in control.
-
----
-
-## The Dashboard
-
-Open your browser to `http://localhost:8866` after starting the app. Here's what you'll find:
+Open `http://localhost:8866` after starting the app. Everything runs in the browser, locally, on your machine.
 
 ### Portfolio Overview
-The top bar shows your **total portfolio value** and **today's dollar and percentage change**, updated every 60 seconds with live market prices. Below it, three account cards show your Individual brokerage, Solo 401(k), and Rollover IRA — each with live equity values, today's change, and a visual breakdown of your holdings.
 
-### Account Strategy
-Each account card has a **"Get Account Strategy"** button. Click it and the AI generates a tailored strategy for that specific account type — taking into account tax treatment (taxable vs. tax-deferred vs. tax-free), your current holdings, unrealized gains, and available cash. The strategy opens in a full-screen overlay you can:
-- **Minimize** to a floating pill and restore anytime
-- **Export as PDF** — opens a clean print-ready page
-- **Email to yourself** — pre-fills your email client with the full analysis
-- Strategies are **cached for the day** — click again and it reopens instantly without re-running
+A live snapshot of your entire portfolio — total value, today's dollar and percent change, updated every 60 seconds. Below it, account cards organized into tabs:
 
-### Holdings Table
-A live table of all your positions across all three accounts. Sortable, searchable, and updated with real-time prices. Each row shows shares, live price, current value, cost basis, unrealized gain/loss in dollars and percent, and today's change. Click any row to open the stock detail panel.
+- **All** — every account at once
+- **Retirement** — IRAs and 401(k)s
+- **Investment** — brokerage and taxable accounts
+- **Crypto** — Bitcoin, Ethereum, and any other digital assets
 
-### Stock Detail Panel
-Click any holding to slide open a detail panel showing:
-- Current price with a **1-month sparkline chart**
-- 52-week high and low, P/E ratio, market cap, beta
-- Analyst consensus rating and price target (with implied upside/downside)
-- Your holdings in that stock across accounts — shares, average cost, current gain/loss
-- Recent news headlines
-- Quick-launch buttons for every AI agent
+Each card shows live equity, today's change, a visual breakdown of holdings, liabilities (like margin), and informational notes. Cash balances are shown only when non-zero.
 
-### AI Agents
-Select any stock — your holdings *or* any ticker you type in — and run one of seven AI analyses:
+### All Holdings Table
 
-| Agent | What It Does |
-|-------|-------------|
-| ⚡ Quick Snapshot | Fast signal (Buy/Hold/Sell/Avoid), top 3 bull and bear factors, key levels, one-line thesis |
-| 📊 Technical | Trend, support & resistance levels, momentum, entry zone, stop loss, and targets |
-| 🏗 Fundamental | Valuation verdict, growth profile, margins, financial health, and competitive moat |
+A unified table of every position across every account — sortable by any column (symbol, value, gain/loss, % change, etc.). Click any row to open the stock detail panel.
+
+---
+
+## AI Entry Points — Conversations at Every Level
+
+The dashboard has four distinct AI surfaces. Each one is independently conversational, and all of them share memory — so what you've discussed in one place informs the answers you get in another.
+
+---
+
+### 1. Stock Detail Panel — Click Any Ticker
+
+Click any holding (or search any ticker) and a panel slides in from the right showing:
+
+**Interactive Price Chart**
+- 12 selectable time windows: All Time, 10Y, 5Y, 3Y, 2Y, 1Y, 6M, 3M, 1M, 3W, 1W, 3D
+- Area chart with crosshair hover tooltip
+- Switches to hourly resolution automatically for short windows (1W, 3D)
+
+**Period Statistics** — updates instantly when you change the time window:
+- Date range, Open, High, Low, Close
+- Total % change and dollar change
+- High-to-low range, best single period, worst single period
+- Up day / Down day count
+
+**Stock Fundamentals** — P/E, forward P/E, P/S, market cap, 52-week range, beta, analyst consensus, price target with implied upside
+
+**Your Holdings** — shares held, average cost, current value, gain/loss, across every account you own it in
+
+**Recent News** — last 5 headlines
+
+**Quick-Launch Agent Buttons** — run any of the seven specialist agents directly from the detail view
+
+**Embedded AI Chat**
+At the bottom of the panel is a chat bar: `Ask AI about this stock…`
+
+Type a question and hit Enter. The panel expands to a two-column layout — stock info on the left, AI conversation on the right — each column independently scrollable. The AI routes your question to the most relevant specialist automatically (technical, fundamental, sentiment, options, risk, or thesis) and tells you which analyst responded.
+
+- **Exit Chat** collapses back to single-column without losing the conversation
+- **Restart** clears the thread and starts fresh
+- Attach a screenshot or data file (📎) and the AI reads it directly
+- Paste an image from your clipboard — no file picker needed
+
+---
+
+### 2. Smart Ask — Describe What You Want
+
+In the AI Agents section, below the specialist buttons, there's a plain-text input:
+
+> *"Should I take profits on TSLA given my cost basis?"*
+> *"Is the technical setup on NVDA worth adding here?"*
+> *"Compare the risk profiles of my two largest positions."*
+
+Type anything. The system routes it through a fast classifier that decides which 1–3 specialist agents are most relevant to your question. Those agents run sequentially, and their outputs are synthesized into a direct answer to what you actually asked. You can see which agents ran, each labeled at the top of their section.
+
+This is the fastest path to insight when you don't know which angle matters most.
+
+---
+
+### 3. Specialist Agent Analysis
+
+If you do know which lens you want, pick one directly:
+
+| Agent | Focus |
+|-------|-------|
+| ⚡ Quick Snapshot | Signal (Buy/Hold/Sell/Avoid), top bull and bear factors, key levels, one-line thesis |
+| 📊 Technical | Trend structure, support and resistance, RSI, MACD, entry zone, stop and targets |
+| 🏗 Fundamental | Valuation verdict, growth, margins, financial health, competitive position |
 | 🎯 Sentiment | News tone, analyst consensus, short interest, insider and institutional signals |
-| 📈 Options | Specific options strategies with strikes and expirations based on your directional view |
+| 📈 Options | Specific strategies with strikes and expirations based on your directional view |
 | 🛡 Risk | Volatility profile, downside scenarios, position sizing with Kelly Criterion |
-| 📝 Thesis | Full bull/bear case, catalyst calendar, entry/exit strategy, and conviction score |
+| 📝 Thesis | Full bull/bear case, catalysts, entry/exit framework, conviction score |
 
-Results stream live to the page as they generate. When done, you can **export to PDF** or **email the report**.
+Results stream live to the screen as they generate.
+
+**Follow-up Chat** — when the analysis finishes, a chat input appears at the bottom. Ask follow-up questions, challenge the thesis, request a different scenario. The agent has full context of what it just generated.
+
+**Attach data or images** — paste a brokerage screenshot, upload a CSV of price data, or drop in any image and the AI will incorporate it into its response.
+
+**Export** — download the full analysis as a PDF or pre-fill an email to yourself with one click.
+
+**Regenerate** — force a fresh analysis at any time with the ↺ button, bypassing the cache.
+
+---
+
+### 4. Account Strategy — Your Full Portfolio in Context
+
+Each account card has a **Get Strategy** button. Click it and the AI generates a complete investment strategy for that specific account — aware of:
+
+- Every position, its cost basis, and unrealized gain/loss
+- Tax treatment (taxable, IRA, 401k — the strategy changes significantly by account type)
+- Tax lots (for accounts where this data is available)
+- Available cash
+- Liabilities like margin
+
+The strategy opens in a full-screen overlay with a follow-up chat at the bottom. Ask about a specific holding, request a different risk posture, or ask what to do with the cash. The advisor maintains context of the full account throughout the conversation.
+
+- **Minimize** to a floating pill, restore anytime
+- **Export as PDF** — print-ready formatting
+- **Email** — pre-fills your mail client with the full strategy
+- **Regenerate** — force a fresh analysis
+
+---
+
+## Cross-Agent Memory
+
+Every conversation you have — whether in the stock panel chat, the analysis modal, or the account strategy — feeds into a shared context buffer. When you move from one part of the dashboard to another, the AI already knows what you've been exploring.
+
+If you asked about TSLA's cost basis in the stock panel and then open the Morgan Stanley account strategy, the strategy agent knows what you were just discussing. You don't have to re-explain yourself. The session is one continuous conversation across multiple surfaces.
+
+---
+
+## Portfolio Data
+
+The dashboard reads brokerage exports you drop into a folder — no brokerage login, no API connection.
+
+| Brokerage | Format |
+|-----------|--------|
+| Schwab | CSV (Positions export) |
+| E-Trade | CSV (Portfolio download) |
+| Fidelity | CSV (Portfolio Positions) |
+| Morgan Stanley | XLSX (Home page export) |
+| Merrill Lynch | Manual CSV template |
+
+Mix and match — drop multiple files from different brokerages into `portfolio/input/` and the parser merges them automatically.
+
+**Tax Lots** — for positions where you have lot-level cost basis data (e.g., from a brokerage PDF or statement), add them to `portfolio/tax_lots.json`. The AI uses this for precise tax-aware analysis: which lots to sell first, long-term vs. short-term treatment, and exact gain/loss calculations.
 
 ---
 
 ## Setup
 
 ### What You Need
-- Mac or Windows PC
-- [Python 3.8+](https://www.python.org/)
-- An [Anthropic API key](https://console.anthropic.com) — for the AI agents
-- A brokerage account at **Schwab**, **E-Trade**, **Fidelity**, or **Morgan Stanley** (mix and match — all four work simultaneously)
 
-### 1 — Clone & Install
+- Mac or Windows PC
+- Python 3.8+
+- An [Anthropic API key](https://console.anthropic.com)
+- A brokerage account at Schwab, E-Trade, Fidelity, Morgan Stanley, or Merrill Lynch
+
+### Install
 
 ```bash
 git clone https://github.com/miladdavoodi9/ai-trading-assistant.git
@@ -102,85 +176,59 @@ cd ai-trading-assistant
 pip install fastapi uvicorn anthropic requests openpyxl
 ```
 
-### 2 — Add Your Anthropic API Key
+### Configure
 
-Open the `.env` file in the project root and paste your key:
+Create a `.env` file in the project root:
 
 ```
 ANTHROPIC_API_KEY=sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-Get your key at [console.anthropic.com](https://console.anthropic.com). Without it, the dashboard loads and shows live prices, but the AI agents won't run.
+### Load Your Portfolio
 
-> Your key is stored only on your machine and is gitignored — it will never be committed to GitHub.
-
-### 3 — Export Your Portfolio CSV
-
-The dashboard reads a positions CSV you export from your brokerage. No brokerage login or API — just a file you download and drop in a folder.
-
-**Schwab**
-1. Log in → **Accounts** tab → **Positions**
-2. Click the **Export** icon (top-right, looks like a page with a down-arrow)
-3. Save the file → drop it into `portfolio/input/`
-4. Repeat for each account (Individual, IRA, 401k, etc.)
-
-**E-Trade**
-1. Log in → **Portfolio** tab
-2. Click the **download icon** (top-right of the positions table)
-3. Select **CSV** format → save the file
-4. Drop it into `portfolio/input/`
-
-**Fidelity**
-1. Log in → **Accounts & Trade** → **Portfolio**
-2. Click the **Download** button (top-right of the positions table)
-3. Save the file (named `Portfolio_Positions_*.csv`) → drop it into `portfolio/input/`
-
-**Morgan Stanley**
-1. Log in → click your name or the account menu → **Home** (the dashboard overview page)
-2. Look for a **Download** or **Export** icon (top-right of the page)
-3. Save the `.xlsx` file as-is — no Excel conversion needed
-4. Drop the `.xlsx` file into `portfolio/input/`
-
-> Note: The Home Page export shows your top holdings but does not include cost basis. Unrealized gain/loss will show as N/A for Morgan Stanley positions.
-
-You can mix files from different brokerages — drop them all into `portfolio/input/` and the parser auto-detects each format and merges them into one view.
-
-### 4 — Parse Your Portfolio
+Export your positions CSV from your brokerage and drop it in `portfolio/input/`. Then:
 
 ```bash
 python parse_schwab.py
 ```
 
-The parser auto-detects the brokerage format, merges all accounts into one file, and prints a summary. Do this whenever you make trades.
+### Launch
 
-### 5 — Launch the Dashboard
-
-Double-click **`Launch Application.command`** (Mac) or **`Launch Application.bat`** (Windows).
-
-Or from a terminal:
 ```bash
 python dashboard.py
 ```
 
-Then open **http://localhost:8866** in your browser.
+Open `http://localhost:8866` in your browser.
+
+Or double-click **`Launch Application.command`** (Mac) / **`Launch Application.bat`** (Windows).
 
 ---
 
 ## Updating Your Portfolio
 
-Whenever you make a trade, export a fresh file from your brokerage (CSV for Schwab/E-Trade, XLSX for Morgan Stanley), drop it in `portfolio/input/` replacing the old one, and run `python parse_schwab.py` again. Day-to-day price changes update automatically every 60 seconds — no action needed.
+Export a fresh file from your brokerage after trades, drop it in `portfolio/input/`, and re-run `python parse_schwab.py`. Day-to-day price changes update automatically every 60 seconds.
 
 ---
 
-## Privacy & Security
+## Privacy
 
 - Your portfolio data never leaves your machine
-- Brokerage exports (CSV/XLSX) are gitignored and stay local
-- No direct connection to Schwab, E-Trade, Morgan Stanley, or any brokerage
-- The only external calls are live price lookups (Yahoo Finance) and AI analysis (Anthropic API)
+- Brokerage CSV/XLSX files are gitignored
+- No direct brokerage connection — you control the data
+- External calls: live prices (Yahoo Finance) and AI analysis (Anthropic API only)
+
+---
+
+## Coming Soon
+
+**Crypto — Coinbase Integration**
+Dedicated crypto tab with Coinbase connection, cold wallet balance lookup by public address, and crypto-specific agents (on-chain sentiment, fear & greed index, whale activity, DeFi yield).
+
+**Remote Access**
+Access the dashboard from your phone or any device. Local network access and optional secure remote tunnel via ngrok or Cloudflare.
 
 ---
 
 ## Disclaimer
 
-This tool is for **educational and research purposes only**. It is not financial advice. It does not execute trades, manage portfolios, or connect to any brokerage. All analysis is AI-generated based on publicly available information. Markets are unpredictable. Always do your own due diligence and consult a licensed financial advisor before making investment decisions.
+This tool is for educational and research purposes only. It is not financial advice. It does not execute trades, manage portfolios, or connect to any brokerage. All analysis is AI-generated based on publicly available information. Always do your own due diligence and consult a licensed financial advisor before making investment decisions.
